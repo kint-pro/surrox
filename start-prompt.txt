@@ -1,0 +1,480 @@
+**End-to-End Referenz — Blackbox-Optimierungs-Framework für kint**
+
+---
+
+**Überblick**
+
+Das Framework nimmt eine deklarative Problembeschreibung und validierte Daten entgegen. Es trainiert Surrogate-Modelle, optimiert darauf, und liefert erklärte, unsicherheitsbewertete Empfehlungen zurück. Keine Datenbereinigung, kein Feature Engineering, keine Visualisierung, keine natürlichsprachliche Interpretation — das ist kint's Verantwortung.
+
+---
+
+**Der Fluss in sechs Schritten:**
+
+---
+
+**Schritt 1: Problem-Definition**
+
+kint übergibt dem Framework ein Problem-Objekt. Es enthält:
+
+**Variablen.** Jede Variable hat name, dtype (continuous, integer, categorical, ordinal), role (decision oder context), bounds (lower/upper oder Wertemenge). Entscheidungsvariablen werden optimiert. Kontextvariablen werden bei der Optimierung fixiert, fließen aber als Features ins Surrogate.
+
+**Objectives.** Jedes Objective hat name, direction (minimize/maximize), column (Referenz auf Datenspalte). Mehrere Objectives = Multi-Objective-Optimierung.
+
+**Constraints.** Zwei Typen. VariableConstraints: analytische Bedingungen auf Entscheidungsvariablen (z.B. "A + B ≤ 20"), direkt auswertbar. DataConstraints: datengetriebene Bedingungen (z.B. "vorhergesagter Wert ≤ Grenzwert"), brauchen ein eigenes Surrogate. Haben name, column, operator (≤, ≥, ==), limit.
+
+**Domain Knowledge.** MonotonicRelations: variable → objective_or_constraint, direction (increasing/decreasing). Beschreiben bekannte monotone Zusammenhänge zwischen einer Entscheidungsvariable und einem Objective oder DataConstraint.
+
+**Szenarien.** Benannte Belegungen der Kontextvariablen. Szenario "Normalbetrieb": Windgeschwindigkeit = 10, Last = mittel. Szenario "Spitzenlast": Windgeschwindigkeit = 25, Last = hoch. Optional — wenn keine Szenarien definiert sind, werden Kontextvariablen auf Median der historischen Daten gesetzt.
+
+**Dataset.** Der validierte Datensatz, gebunden an die Variablen- und Objective-Definitionen. Das Framework validiert bei der Bindung: Spaltenexistenz, Typkonsistenz, Bounds-Einhaltung, keine fehlenden Werte in Objective/Constraint-Spalten. Fehler werden zurückgemeldet, nicht selbst behoben.
+
+---
+
+**Schritt 2: Surrogate-Training**
+
+Der SurrogateManager leitet aus dem Problem-Objekt ab, was trainiert werden muss: ein Surrogate pro Objective, ein Surrogate pro DataConstraint. Alle Surrogates haben denselben Input (alle Variablen — decision + context) aber verschiedene Targets.
+
+**Pro Surrogate passiert:**
+
+Der Datensatz wird gesplittet: 80% Training + Cross-Validation, 20% Conformal-Kalibrierung.
+
+Eine Optuna-Study wird gestartet. Der Suchraum umfasst initial zwei Estimator-Familien: XGBoost und LightGBM. Pro Trial wird ein Modell trainiert und per k-Fold Cross-Validation evaluiert. MonotonicRelations, die dieses Surrogate betreffen, werden als Monotonie-Constraints an die Estimators übergeben. Jeder Trial wird vollständig aufgezeichnet: Trial-ID, Estimator-Familie, Hyperparameter-Config, alle Fold-Metriken (R², RMSE, MAE), mittlere Trainingszeit, mittlere Inferenzzeit.
+
+Nach Abschluss der Study werden die Top-K Modelle (z.B. Top 5) zu einem Ensemble kombiniert. Gewichtung proportional zur inversen Validierungsfehler.
+
+Auf dem 20% Kalibrierungsset werden die Conformal-Prediction-Scores berechnet: die Residuen des Ensembles, sortiert nach Größe. Daraus lassen sich für jedes gewünschte Konfidenzniveau Vorhersageintervalle ableiten.
+
+**Der SurrogateManager hält am Ende:**
+
+Ein Dictionary: name → Ensemble (pro Objective und DataConstraint). Die vollständigen Trial-Historien (Leaderboard). Den Kalibrierungsdatensatz und die Conformal-Scores. Die Referenz auf das Problem-Objekt.
+
+**Was er nach außen anbietet:**
+
+evaluate(X) → Dictionary mit Objective-Name → Vorhersagewerte, Constraint-Name → Vorhersagewerte. Akzeptiert einzelne Punkte und Batches (Matrizen).
+
+evaluate_with_uncertainty(X, confidence) → wie evaluate, plus obere/untere Intervallgrenzen pro Objective und Constraint.
+
+Zugriff auf einzelne Ensembles (für die Analyse-Schicht).
+
+Zugriff auf die Trial-Historien (für das Leaderboard).
+
+---
+
+**Schritt 3: Optimierung**
+
+Der Optimierer bekommt das Problem-Objekt und den SurrogateManager.
+
+**Er konfiguriert sich automatisch aus der Problemstruktur:**
+
+Suchraum: nur Decision-Variablen, mit ihren Typen und Bounds.
+
+Algorithmus: Single-Objective + continuous → DE. Single-Objective + mixed → GA. Multi-Objective (≤3 Objectives) → NSGA-II. Multi-Objective (≥4 Objectives) → NSGA-III. Jeweils mit gemischter Variablenrepräsentation wenn integer/categorical vorhanden.
+
+Kontextvariablen: fixiert auf die Werte des aktiven Szenarios.
+
+**Die Evaluationsfunktion:**
+
+Nimmt einen Batch von Kandidatenpunkten (nur Decision-Variablen). Hängt die fixierten Kontextvariablen an. Übergibt an SurrogateManager.evaluate(). Transformiert Objective-Werte für pymoo (maximize → negieren). Evaluiert VariableConstraints direkt. Transformiert DataConstraint-Vorhersagen in Constraint-Violations (g(x) ≤ 0).
+
+Optional: Konfidenz-Filter. Punkte mit zu hoher Unsicherheit werden bestraft.
+
+**Was rauskommt — das OptimizationResult:**
+
+Referenz auf das Problem-Objekt. Das aktive Szenario (Kontextvariablen-Belegung).
+
+Bei Single-Objective: beste Lösung (Decision-Variablen-Werte + vorhergesagte Objective-Werte + vorhergesagte Constraint-Werte + Unsicherheit). Top-K Alternativen.
+
+Bei Multi-Objective: Pareto-Front (Menge von Lösungen). Compromise-Solution (nächster Punkt zum Utopia-Punkt im normalisierten Raum). Extrempunkte (beste Lösung pro Objective). Hypervolume-Metrik.
+
+Metadaten: Algorithmus, Generationen, Populationsgröße, Convergence-Geschichte.
+
+---
+
+**Schritt 4: Analyse**
+
+Die Analyse-Schicht bekommt das Problem-Objekt, den SurrogateManager und das OptimizationResult.
+
+**Automatisch generiert (Summary):**
+
+Ergebnis-Zusammenfassung: beste Lösung / Pareto-Front / Compromise-Solution mit allen Werten. Verbesserung gegenüber bestem historischen Datenpunkt.
+
+Constraint-Status pro Lösung: aktiv / Spielraum / verletzt. Bei DataConstraints: Unsicherheit relativ zum Grenzwert.
+
+Surrogate-Qualität pro Objective und DataConstraint: Validierungs-R², RMSE, Conformal-Coverage. Warnung wenn Qualität unter Schwellenwert.
+
+Extrapolationswarnung: Distanz der empfohlenen Lösung zu den nächsten Trainingsdatenpunkten.
+
+Monotonie-Validierung: empirische Prüfung, ob das Ensemble die definierten MonotonicRelations in der Region um die Lösung einhält.
+
+**Auf Anfrage (Detail-Analysen, lazy-evaluiert, gecached):**
+
+Feature Importance pro Objective. Getrennt nach Decision-Variablen ("woran kann ich drehen?") und allen Variablen ("was beeinflusst das Ergebnis?"). Via Permutation Importance.
+
+SHAP global: Summary Plot über den gesamten Datensatz, pro Objective.
+
+SHAP lokal: Contribution Plot für eine spezifische Lösung (empfohlene Lösung, ein Pareto-Punkt, oder ein What-If-Punkt), pro Objective.
+
+PDP / ICE: Effekt einer einzelnen Entscheidungsvariable auf ein Objective. Berechnet um die empfohlene Lösung herum.
+
+Trade-off-Analyse (Multi-Objective): marginaler Trade-off entlang der Pareto-Front. Wo wird der Tausch steil?
+
+What-If-Simulation: beliebige Entscheidungsvariablen-Werte rein, vorhergesagte Objectives + Constraints + Unsicherheit raus. Mit Vergleich zur empfohlenen Lösung und zum historischen Durchschnitt.
+
+Szenario-Vergleich: Gegenüberstellung der Ergebnisse verschiedener Szenarien. Welche Entscheidungsvariablen sind robust, welche szenarioabhängig.
+
+**Was die Analyse-Schicht liefert:**
+
+Datenstrukturen, keine Visualisierungen. Arrays, Dictionaries, typisierte Objekte. kint visualisiert. kint interpretiert (mit oder ohne LLM). Das Framework liefert die Substanz.
+
+---
+
+**Zusammenfassung der Objekte:**
+
+Problem → beschreibt das Problem deklarativ. Wird von allen Schichten konsumiert.
+
+SurrogateManager → hält trainierte Ensembles, liefert Vorhersagen mit Unsicherheit.
+
+OptimizationResult → hält die Ergebnisse der Optimierung, gebunden an Problem und Szenario.
+
+AnalysisResult → hält Summary (automatisch) und Detail-Analysen (lazy). Gebunden an Problem, SurrogateManager und OptimizationResult.
+
+---
+
+**Zusammenfassung der Verantwortlichkeiten:**
+
+kint → Datenbereinigung, semantische Analyse, Nutzerinteraktion, Visualisierung, Interpretation.
+
+Framework → Typvalidierung, Surrogate-Training, Ensemble-Bildung, Unsicherheit, Optimierung, Analyse-Daten.
+
+Externe Libraries → Optuna (Hyperparameter-Suche), XGBoost/LightGBM (Estimators), pymoo (Optimierung), SHAP (Erklärungen).
+
+---
+
+**Nicht in Phase 1, aber im Design nicht verbaut:**
+
+Plugin-System für Estimators (TabPFN, CatBoost, neuronale Netze). Plugin-System für Optimierer (CMA-ES, Surrogate-Assisted Evolution). Plugin-System für Ensemble-Strategien (Stacking, Blending). Robuste Optimierung (über Szenarien-Verteilungen). Meta-Learning (lernen welche Configs für welche Daten gut funktionieren). Drift Detection und selektives Retraining. Parallelisierung der TrainingJobs.
+
+Die Interfaces zwischen den Schichten sind so geschnitten, dass diese Erweiterungen jeweils innerhalb einer Schicht stattfinden, ohne die anderen Schichten zu verändern.
+
+---
+
+Das ist die Blaupause. Soll ich das als Dokument exportieren?Okay. Die Problemdefinition ist das zentrale Objekt, durch das alles fließt. Training, Optimierung, Analyse — alles konsumiert dieses Objekt. Wenn es falsch geschnitten ist, zieht sich das durch die gesamte Codebasis.
+
+---
+
+**Die Designentscheidungen, die wir zuerst treffen müssen:**
+
+**Frage 1: Wie granular sind Variablen?**
+
+Eine Variable in eurem Kontext hat mehr Semantik als in LumiX. Bei LumiX ist eine Variable mathematisch: Name, Typ (continuous/integer/binary), Bounds. Bei euch hat eine Variable zusätzlich eine Rolle: ist sie eine Entscheidungsvariable (der Optimierer darf sie verändern) oder eine Kontextvariable (gegeben, nicht optimierbar, aber beeinflusst das Ergebnis)?
+
+Beispiel Hafenlogistik: "Anzahl Kräne" ist eine Entscheidungsvariable. "Windgeschwindigkeit" ist eine Kontextvariable — ihr könnt sie nicht ändern, aber sie beeinflusst den Durchsatz. Beide fließen ins Surrogate als Features, aber nur Entscheidungsvariablen gehen in den Optimierer.
+
+Das hat Konsequenzen: bei der Optimierung muss der Nutzer für Kontextvariablen einen Wert oder ein Szenario angeben ("optimiere unter der Annahme, dass Windgeschwindigkeit = 15 km/h"). Sonst weiß der Optimierer nicht, was er dort einsetzen soll.
+
+**Frage 2: Wie werden Constraints modelliert?**
+
+Zwei fundamental verschiedene Typen: analytische Constraints ("Anzahl Kräne ≤ 12" — eine direkte Bound auf eine Entscheidungsvariable, braucht kein Surrogate) und datengetriebene Constraints ("vorhergesagte CO2-Emission ≤ Grenzwert" — das ist im Grunde ein Objective mit einer Schwelle). Analytische Constraints sind trivial — sie sind einfach Bounds oder lineare Bedingungen auf den Variablen. Datengetriebene Constraints sind konzeptionell Objectives, die nicht optimiert, sondern nur eingehalten werden müssen. Die Frage ist: modelliert ihr sie als eigene Entität, oder als Objective mit einem Flag "ist Constraint, nicht Objective"?
+
+Meine Empfehlung: getrennt modellieren. Ein datengetriebener Constraint hat eine Richtung (≤ oder ≥) und einen Grenzwert, aber keine Optimierungsrichtung. Ein Objective hat eine Optimierungsrichtung, aber keinen Grenzwert. Das sind verschiedene Semantiken. Beide brauchen ein Surrogate, aber sie werden unterschiedlich behandelt.
+
+**Frage 3: Wo lebt das Domain Knowledge?**
+
+Monotone Beziehungen ("mehr Budget → nie schlechtere Qualität") sind Beziehungen zwischen einer Entscheidungsvariable und einem Objective. Sie gehören also weder zur Variable noch zum Objective allein, sondern beschreiben eine Beziehung zwischen beiden. Das heißt: Domain Knowledge ist eine eigene Entität im Problem-Objekt, nicht ein Attribut einer Variablen.
+
+---
+
+**Die Struktur des Problem-Objekts:**
+
+**Variable**
+Jede Variable hat: name (eindeutiger Identifier), dtype (continuous, integer, categorical, ordinal), role (decision oder context), bounds (lower/upper für numerisch, Wertemenge für kategorisch), und optional: unit, description.
+
+Für Kontextvariablen braucht es zusätzlich einen Mechanismus, um bei der Optimierung einen Wert oder ein Szenario zu setzen. Entweder ein fester Wert ("optimiere für Windgeschwindigkeit = 15") oder eine Verteilung ("optimiere robust über typische Windgeschwindigkeiten").
+
+**Objective**
+Jedes Objective hat: name, direction (minimize oder maximize), column (Referenz auf die Datenspalte), und optional: reference_value (ein Referenzpunkt für die Normalisierung bei Multi-Objective — z.B. "der aktuelle Wert, den wir verbessern wollen").
+
+**Constraint**
+Zwei Untertypen. VariableConstraint: bezieht sich direkt auf eine oder mehrere Entscheidungsvariablen, ist analytisch auswertbar. Hat: expression (z.B. "Kräne_A + Kräne_B ≤ 20"), und braucht kein Surrogate. DataConstraint: bezieht sich auf eine Datenspalte, die nicht direkt beobachtbar ist, sondern vorhergesagt werden muss. Hat: name, column, operator (≤, ≥, ==), limit, und braucht ein eigenes Surrogate — genau wie ein Objective.
+
+**MonotonicRelation** (Domain Knowledge)
+Hat: variable (Referenz auf eine Entscheidungsvariable), objective_or_constraint (Referenz auf ein Objective oder DataConstraint), direction (increasing oder decreasing). Wird beim Training an Estimators weitergegeben, die es unterstützen, und bei der Validierung geprüft.
+
+**Dataset**
+Der validierte Datensatz. Gebunden an die Variablen- und Objective-Definitionen. Das Problem-Objekt validiert bei der Bindung: existieren alle referenzierten Spalten, stimmen die Typen, liegen die Werte innerhalb der definierten Bounds, gibt es fehlende Werte in Objective-Spalten (wenn ja → Fehler, nicht Imputation).
+
+---
+
+**Was das Problem-Objekt nach außen anbietet:**
+
+Das Problem-Objekt ist nicht nur ein Datenbehälter. Es leitet aus seiner Struktur ab, was die nachfolgenden Schichten brauchen:
+
+**Für das Training:** Welche Surrogates müssen trainiert werden? Eins pro Objective, eins pro DataConstraint. Welche Features gehen rein? Alle Variablen (decision + context). Welche Monotonie-Constraints gelten pro Surrogate?
+
+**Für die Optimierung:** Welche Variablen werden optimiert (nur decision)? Welche Bounds gelten? Welche VariableConstraints müssen eingehalten werden? Welche DataConstraints müssen über Surrogates geprüft werden? Wie viele Objectives — Single oder Multi?
+
+**Für die Analyse:** Welche Objectives gibt es? Welche Variablen sind die Entscheidungsvariablen (nur für diese sind PDP/ICE sinnvoll)? Welche MonotonicRelations können als Plausibilitätscheck dienen?
+
+---
+
+**Was das Problem-Objekt NICHT tut:**
+
+Es trifft keine Entscheidungen über Algorithmen, Hyperparameter, Ensemble-Strategien. Es beschreibt das Problem, nicht die Lösung. Genau wie ein LXModel in LumiX das Optimierungsproblem beschreibt, aber nicht den Solver konfiguriert.
+
+---
+
+**Ein kritischer Punkt noch: Szenarien.**
+
+Für Kunden wie TenneT ist ein einzelner Optimierungslauf selten genug. Sie wollen wissen: "Was ist optimal bei normaler Last? Was bei Spitzenlast? Was bei Ausfall von Anlage X?" Das sind Szenarien — verschiedene Belegungen der Kontextvariablen bei gleicher Problemstruktur.
+
+Das Problem-Objekt sollte Szenarien als First-Class-Konzept kennen: ein Szenario ist eine benannte Belegung der Kontextvariablen. Die Optimierung kann dann über mehrere Szenarien laufen, und die Analyse zeigt, wie sich die Empfehlungen zwischen Szenarien unterscheiden. Das ist kein Nice-to-have für industrielle Kunden — das ist Kernfunktionalität.
+
+---
+
+Soll ich als nächstes den SurrogateManager durchdesignen — also die Schicht, die aus dem Problem-Objekt die richtigen Modelle ableitet, trainiert und verwaltet?**Der SurrogateManager**
+
+Er bekommt das Problem-Objekt und liefert trainierte Modelle, die der Optimierer und die Analyse-Schicht konsumieren können. Seine Verantwortung ist klar abgegrenzt: er entscheidet was trainiert wird (abgeleitet aus der Problemdefinition), wie trainiert wird (Hyperparameter-Suche, Validierung), und er verwaltet die resultierenden Modelle.
+
+---
+
+**Was er aus dem Problem-Objekt ableitet:**
+
+Das Problem-Objekt hat N Objectives und M DataConstraints. Der SurrogateManager braucht also N + M Surrogates. Jedes Surrogate hat denselben Input (alle Variablen — decision + context), aber einen anderen Output (die jeweilige Objective- oder Constraint-Spalte).
+
+Dazu kommt pro Surrogate die Information, welche MonotonicRelations gelten. Objective "Kosten" hat vielleicht eine monoton steigende Beziehung zu Variable "Personal", während Objective "Durchsatz" eine monoton steigende Beziehung zu Variable "Kräne" hat. Das sind verschiedene Monotonie-Konfigurationen pro Surrogate.
+
+---
+
+**Die interne Struktur:**
+
+**TrainingJob** — die Einheit, die ein einzelnes Surrogate trainiert.
+
+Ein TrainingJob bekommt: die Feature-Matrix (alle Variablen-Spalten aus dem Dataset), den Target-Vektor (eine Objective- oder Constraint-Spalte), die Monotonie-Constraints (nur die, die für dieses Target gelten), und ein Zeitbudget oder Trial-Budget.
+
+Ein TrainingJob führt aus: Optuna-Study mit mehreren Estimator-Familien (XGBoost, LightGBM, initial). Pro Trial wird ein Modell mit einer bestimmten Config trainiert und per Cross-Validation evaluiert. Jeder Trial wird vollständig aufgezeichnet — Config, alle Fold-Metriken, Trainingszeit, Inferenzzeit.
+
+Ein TrainingJob liefert: das beste Modell pro Estimator-Familie, die Top-K Modelle insgesamt, die vollständige Trial-Historie (euer Leaderboard), und die Cross-Validation-Scores.
+
+**Ensemble** — fasst die Ergebnisse eines TrainingJobs zusammen.
+
+Aus den Top-K Modellen eines TrainingJobs wird ein Ensemble gebildet. Erstmal simpel: gewichtetes Averaging, Gewichte proportional zur inversen Validierungsfehler. Das Ensemble hat eine predict-Methode (Punktvorhersage) und eine predict_with_uncertainty-Methode (Punkt + Intervall).
+
+Die Unsicherheit kommt aus zwei Quellen: Ensemble-Disagreement (Varianz der Einzelvorhersagen — sofort verfügbar) und Conformal Prediction (kalibrierte Intervalle — erfordert einen Kalibrierungsdatensatz, der beim Training beiseitegelegt wird).
+
+**SurrogateManager** — die Klammer um alles.
+
+Der SurrogateManager hält: ein Dictionary von name → Ensemble (ein Eintrag pro Objective und DataConstraint), die Referenz auf das Problem-Objekt, und den Kalibrierungsdatensatz für Conformal Prediction.
+
+---
+
+**Was der SurrogateManager nach außen anbietet:**
+
+**Für die Optimierung:** Eine evaluate-Methode, die einen Vektor von Entscheidungsvariablen-Werten plus Kontextvariablen-Werte nimmt und für alle Objectives und DataConstraints die Vorhersagen zurückgibt. Also: Input ist ein Kandidatenpunkt, Output ist ein Dictionary mit Objective-Name → Vorhersagewert und Constraint-Name → Vorhersagewert. Optional mit Unsicherheit.
+
+Der Optimierer ruft diese Methode in seiner Evaluationsfunktion auf. Er muss nichts über die Modelle wissen — nur: Punkt rein, Werte raus.
+
+**Für die Analyse:** Zugriff auf die einzelnen Ensembles pro Objective/Constraint. Die Analyse-Schicht braucht die Modelle direkt, um SHAP-Werte, PDP/ICE zu berechnen. Dazu die Trial-Historien pro TrainingJob für das Leaderboard. Und die Conformal-Intervalle für Unsicherheitsvisualisierung.
+
+**Für Szenarien:** Die evaluate-Methode akzeptiert verschiedene Belegungen der Kontextvariablen. Der SurrogateManager selbst muss dafür nichts Besonderes tun — die Kontextvariablen sind einfach Features, die mit unterschiedlichen Werten belegt werden. Aber die Schnittstelle muss klar machen, welche Variablen belegt werden müssen.
+
+---
+
+**Entscheidungen, die der SurrogateManager trifft:**
+
+**Welche Estimators werden trainiert:** Initial fest: XGBoost und LightGBM. Beide unterstützen Monotonie, sind schnell in der Inference, und dominieren bei tabellarischen Daten. Kein Plugin-System jetzt, aber die TrainingJob-Logik ist so geschnitten, dass ein neuer Estimator eine einzige neue Klasse ist.
+
+**Wie wird der Hyperparameter-Raum definiert:** Pro Estimator-Familie ein vordefinierter Suchraum, in den die Monotonie-Constraints injiziert werden. Nicht der Nutzer definiert den Suchraum — das Framework hat sinnvolle Defaults.
+
+**Wie viele Trials:** Entweder zeitbudgetiert ("trainiere 2 Minuten pro Surrogate") oder trialbudgetiert ("50 Trials pro Surrogate"). Der Nutzer gibt ein Gesamtbudget, der SurrogateManager verteilt es auf die N + M Surrogates.
+
+**Wie wird das Ensemble gebildet:** Die Top-K Modelle (z.B. Top 5) aus der Trial-Historie, gewichtet nach Validierungsperformance. K ist ein interner Parameter, nicht nutzerkonfiguriert.
+
+**Wie wird die Conformal Prediction kalibriert:** Beim Training wird ein Hold-out-Split gemacht (z.B. 80/20). Die 80% werden für Training + Cross-Validation genutzt, die 20% für die Conformal-Kalibrierung. Das passiert automatisch, der Nutzer muss davon nichts wissen.
+
+---
+
+**Was der SurrogateManager NICHT tut:**
+
+Er optimiert nicht. Er erklärt nicht. Er trifft keine Entscheidungen über die Problemdefinition. Er nimmt das Problem-Objekt als gegeben und liefert trainierte, evaluierte, unsicherheitskalibrierte Modelle.
+
+---
+
+**Ein kritischer Designpunkt: Parallelität der TrainingJobs.**
+
+N + M Surrogates müssen trainiert werden. Die TrainingJobs sind unabhängig voneinander — sie teilen denselben Feature-Raum, aber jeder hat seinen eigenen Target. Das heißt: sie können parallel laufen. Für industrielle Probleme mit vielen Objectives ist das relevant. Der SurrogateManager sollte von Anfang an so gebaut sein, dass die TrainingJobs parallelisierbar sind — auch wenn die erste Implementierung sie sequentiell ausführt.
+
+---
+
+**Noch ein Punkt: Retraining.**
+
+Wenn neue Daten kommen (was bei TenneT regelmäßig der Fall sein wird), muss nicht alles neu trainiert werden. Der SurrogateManager sollte erkennen können, ob neue Daten die bestehenden Surrogates signifikant verschlechtern (Drift Detection), und selektiv nur die betroffenen Surrogates neu trainieren. Das ist kein Phase-1-Feature, aber das Design sollte es nicht verbauen — also: jeder TrainingJob und jedes Ensemble ist an eine Datenversion gebunden.
+
+---
+
+Soll ich als nächstes die Optimierungsschicht durchdesignen — also wie der Optimierer den SurrogateManager konsumiert und aus der Problemdefinition die richtige Konfiguration ableitet?**Die Optimierungsschicht**
+
+Sie bekommt das Problem-Objekt und den SurrogateManager, und liefert eine oder mehrere empfohlene Lösungen. Ihre Verantwortung: den richtigen Algorithmus konfigurieren, den Entscheidungsraum korrekt aufspannen, Constraints einhalten, und bei Multi-Objective die Pareto-Front extrahieren.
+
+---
+
+**Was sie aus dem Problem-Objekt ableitet:**
+
+**Den Suchraum.** Nur die Decision-Variablen werden optimiert. Deren Typen und Bounds definieren den Suchraum direkt. Continuous → reelle Bounds. Integer → ganzzahlige Bounds. Categorical → diskrete Auswahl. Der Optimierer muss diese Typen korrekt handhaben — kein Runden von continuous auf integer, kein Interpolieren zwischen kategorischen Werten.
+
+**Die Kontextvariablen-Belegung.** Kontextvariablen sind fixiert während einer Optimierung. Sie kommen entweder aus einem Szenario (vom Nutzer definiert) oder als Default (z.B. Median der historischen Werte). Jeder Kandidatenpunkt, den der Optimierer generiert, wird mit den Decision-Variablen-Werten plus den fixierten Kontextvariablen-Werten an den SurrogateManager übergeben.
+
+**Die Objective-Konfiguration.** Ein Objective → Single-Objective-Optimierung. Mehrere Objectives → Multi-Objective. Die Richtungen (min/max) müssen korrekt an den Algorithmus weitergegeben werden. pymoo minimiert standardmäßig — Objectives mit direction=maximize müssen negiert werden. Das klingt trivial, ist aber eine häufige Fehlerquelle, die das Problem-Objekt zentral lösen sollte: eine Methode, die den Rohwert des SurrogateManagers in den pymoo-kompatiblen Wert transformiert.
+
+**Die Constraints.** VariableConstraints (analytisch) werden direkt in den Suchraum oder als Constraint-Funktionen kodiert. Einfache Bounds sind schon durch die Variablen-Definition abgedeckt. Relationale Constraints ("Kräne_A + Kräne_B ≤ 20") werden als Constraint-Funktionen implementiert, die pymoo bei jeder Evaluation prüft. DataConstraints (surrogate-basiert) werden über den SurrogateManager evaluiert — der Optimierer fragt den SurrogateManager nach der Vorhersage, vergleicht mit dem Grenzwert, und gibt das als Constraint-Violation an pymoo weiter.
+
+---
+
+**Algorithmus-Auswahl:**
+
+Kein Plugin-System, aber eine klare Entscheidungslogik, die aus der Problemstruktur den Algorithmus ableitet:
+
+**Single-Objective, rein continuous:** Differential Evolution. Robust, wenig Konfiguration nötig, funktioniert gut auf Surrogate-Landschaften.
+
+**Single-Objective, mixed (integer/categorical dabei):** GA mit gemischter Repräsentation. pymoo unterstützt das nativ über MixedVariableGA.
+
+**Multi-Objective, rein continuous:** NSGA-II. Der Standardalgorithmus, bewährt, gute Pareto-Front-Approximation.
+
+**Multi-Objective, mixed:** NSGA-II mit gemischter Repräsentation.
+
+**Viele Objectives (≥ 4):** NSGA-III statt NSGA-II. NSGA-II degradiert bei vielen Objectives, weil die Pareto-Dominanz-Relation zu schwach wird. NSGA-III nutzt Referenzpunkte und skaliert besser.
+
+Die Schwelle zwischen "wenige" und "viele" Objectives ist konfigurierbar, Default bei 3-4. Der Nutzer muss diese Entscheidung nicht treffen — das Framework leitet sie aus der Anzahl der Objectives ab.
+
+---
+
+**Die Evaluationsfunktion:**
+
+Das ist das Bindeglied zwischen Optimierer und SurrogateManager. Der Optimierer generiert Kandidatenpunkte (nur Decision-Variablen). Die Evaluationsfunktion macht folgendes:
+
+Erstens: die fixierten Kontextvariablen-Werte anhängen, sodass ein vollständiger Feature-Vektor entsteht. Zweitens: den vollständigen Vektor an den SurrogateManager übergeben, der für alle Objectives und DataConstraints die Vorhersagen zurückgibt. Drittens: die Objective-Werte in pymoo-Format transformieren (maximize → negieren). Viertens: die DataConstraint-Werte in Constraint-Violations transformieren (g(x) ≤ 0 Konvention). Fünftens: die VariableConstraints direkt auf den Kandidatenpunkt evaluieren.
+
+Das Ergebnis ist ein Dictionary mit "F" (Objective-Werte) und "G" (Constraint-Violations), das pymoo direkt konsumiert.
+
+Optional: wenn der SurrogateManager Unsicherheiten liefert, kann die Evaluationsfunktion einen Konfidenz-Filter anwenden. Punkte, bei denen die Unsicherheit eines Objectives über einem Schwellenwert liegt, werden bestraft. Das führt dazu, dass der Optimierer Regionen meidet, in denen das Surrogate unsicher ist. Das ist konservative Optimierung — für industrielle Anwendungen oft das Richtige.
+
+---
+
+**Batch-Evaluation:**
+
+pymoo evaluiert populationsweise — nicht einen Punkt, sondern z.B. 100 Punkte gleichzeitig. Die Evaluationsfunktion muss das unterstützen. Der SurrogateManager bekommt also nicht einen Vektor, sondern eine Matrix (Population × Features) und liefert eine Matrix (Population × Objectives) plus eine Matrix (Population × Constraints) zurück. Das ist performancekritisch, weil der Optimierer tausende Generationen mit je hunderten Kandidaten durchläuft. XGBoost und LightGBM können Batch-Prediction nativ — das muss nur durchgereicht werden, nicht irgendwo in einer Schleife einzeln aufgerufen.
+
+---
+
+**Was nach der Optimierung rauskommt:**
+
+**Single-Objective:** Die beste gefundene Lösung. Plus: die Top-K Lösungen (falls der Nutzer Alternativen sehen will). Plus: die Unsicherheitsschätzung für die beste Lösung.
+
+**Multi-Objective:** Die Pareto-Front — eine Menge von Lösungen, bei denen kein Objective verbessert werden kann, ohne ein anderes zu verschlechtern. Plus: eine Compromise-Solution (der Punkt auf der Pareto-Front, der den besten Kompromiss darstellt — z.B. nächster Punkt zum Utopia-Punkt im normalisierten Raum). Plus: Unsicherheitsschätzungen für jeden Pareto-Punkt.
+
+---
+
+**Das Ergebnis-Objekt:**
+
+Analog zum Problem-Objekt braucht ihr ein typisiertes Ergebnis-Objekt, das alles hält:
+
+**OptimizationResult** enthält: die Referenz auf das Problem-Objekt (damit die Analyse-Schicht weiß, was optimiert wurde), die beste Lösung bzw. die Pareto-Front (Entscheidungsvariablen-Werte plus vorhergesagte Objective-Werte plus vorhergesagte Constraint-Werte), die Unsicherheitsschätzungen pro Lösung, die Compromise-Solution bei Multi-Objective, und Metadaten (welcher Algorithmus, wie viele Generationen, Convergence-Metriken).
+
+Wichtig: das OptimizationResult enthält auch die Kontextvariablen-Belegung, unter der optimiert wurde. Das ist für Szenarien kritisch — der Nutzer will wissen "dieses Ergebnis gilt unter der Annahme von Windgeschwindigkeit = 15 km/h".
+
+---
+
+**Was die Optimierungsschicht NICHT tut:**
+
+Sie erklärt nicht, warum eine Lösung gut ist. Sie visualisiert nichts. Sie verändert keine Surrogates. Sie nimmt den SurrogateManager als Black Box — Punkt rein, Werte raus — und findet die besten Punkte.
+
+---
+
+**Ein Designpunkt für später: Robuste Optimierung.**
+
+Für TenneT ist "optimale Lösung unter einem Szenario" oft nicht genug. Sie wollen eine Lösung, die unter verschiedenen Szenarien gut funktioniert. Das heißt: nicht für ein fixes Set von Kontextvariablen optimieren, sondern über eine Verteilung von Kontextvariablen. Das ist robuste Optimierung — konzeptionell: der Optimierer evaluiert jeden Kandidaten nicht einmal, sondern über mehrere Szenarien, und optimiert den Erwartungswert oder den Worst Case.
+
+Das Design der Evaluationsfunktion macht das möglich, ohne die Architektur zu ändern: statt die Kontextvariablen einmal fix zu setzen, wird pro Kandidat über K Szenarien gemittelt. Der SurrogateManager bekommt K Evaluationen statt einer, und die Evaluationsfunktion aggregiert. Das ist ein Multiplikator auf die Evaluationskosten, aber bei schnellen Surrogates machbar. Nicht Phase 1, aber das Design verbaut es nicht.
+
+---
+
+Soll ich die Analyse-Schicht durchdesignen — also was automatisch generiert wird, nachdem die Optimierung gelaufen ist?**Die Analyse-Schicht**
+
+Sie bekommt das Problem-Objekt, den SurrogateManager und das OptimizationResult, und generiert alles, was der Nutzer braucht, um die Ergebnisse zu verstehen, zu vertrauen und Entscheidungen darauf zu basieren.
+
+---
+
+**Die zentrale Designentscheidung: was wird automatisch generiert vs. was wird auf Anfrage geliefert?**
+
+Bei LumiX ist das klar — nach dem Solve gibt es Sensitivitätsanalyse, Szenarioanalyse, What-If. Alles automatisch. Bei euch ist die Analyse rechenintensiver — SHAP-Werte für ein XGBoost-Modell mit vielen Features und vielen Datenpunkten kosten Zeit. Alles automatisch generieren wäre Verschwendung, wenn der Nutzer nur die Pareto-Front sehen will.
+
+Die Lösung: zwei Ebenen. Eine Summary, die immer automatisch generiert wird und billig ist. Und Detail-Analysen, die das Framework auf Anfrage liefert, aber vorbereitet hat (die Modelle und Daten sind geladen, es muss nur noch gerechnet werden).
+
+---
+
+**Die Summary — wird immer generiert:**
+
+**Ergebnis-Zusammenfassung.** Bei Single-Objective: die beste Lösung mit allen Entscheidungsvariablen-Werten und dem vorhergesagten Objective-Wert. Dazu die Unsicherheit (Conformal Interval). Dazu der Vergleich zum Ist-Zustand: wie viel Verbesserung gegenüber dem besten historischen Datenpunkt?
+
+Bei Multi-Objective: die Pareto-Front als Punktmenge. Die Compromise-Solution. Die Extrempunkte der Front (bester Wert pro Objective). Die Hypervolume-Metrik als Maß für die Qualität der Front.
+
+**Constraint-Status.** Pro Lösung: welche Constraints sind aktiv (am Grenzwert), welche haben Spielraum, welche sind verletzt? Bei datengetriebenen Constraints: wie sicher ist die Vorhersage, dass der Constraint eingehalten wird? Ein Constraint mit Vorhersage 47.5h bei einem Limit von 48h und einem Konfidenzintervall von ±3h ist de facto unsicher — das muss sichtbar sein.
+
+**Surrogate-Qualität.** Pro Objective und DataConstraint: die Validierungsmetrik (z.B. R², RMSE), die Conformal-Coverage (wie oft lag das echte Ergebnis innerhalb des vorhergesagten Intervalls auf dem Kalibrierungsset), und eine Warnung falls die Qualität unter einem Schwellenwert liegt. Der Nutzer muss auf einen Blick sehen: "Kann ich dem Surrogate für Objective X vertrauen?" Wenn das R² für Durchsatz bei 0.95 liegt, aber für Emissionen bei 0.6, muss das klar kommuniziert werden.
+
+**Extrapolationswarnung.** Die empfohlene Lösung liegt möglicherweise in einer Region des Entscheidungsraums, die historisch selten besucht wurde. Das Framework prüft: wie weit ist die empfohlene Lösung von den nächsten Trainingsdatenpunkten entfernt? Wenn sie in einer "dünnen" Region liegt, kommt eine Warnung. Das ist kein statistischer Test, sondern eine einfache Distanzmetrik — aber für industrielle Nutzer ein kritisches Vertrauenssignal.
+
+---
+
+**Detail-Analysen — auf Anfrage:**
+
+**Feature Importance pro Objective.** Welche Entscheidungsvariablen haben den größten Einfluss auf welches Objective? Berechnet über Permutation Importance auf dem Ensemble (modellunabhängig, funktioniert für jedes Ensemble). Nicht SHAP — das ist teurer und kommt separat.
+
+Wichtig: nur Entscheidungsvariablen ranken. Kontextvariablen können zwar hohe Importance haben (Windgeschwindigkeit beeinflusst Durchsatz stark), aber der Nutzer kann sie nicht ändern. Die Analyse muss unterscheiden: "Was beeinflusst das Ergebnis?" (alle Variablen) vs. "Woran kann ich drehen?" (nur Decision-Variablen). Beides verfügbar, aber getrennt dargestellt.
+
+**SHAP-Erklärungen.** Zwei Modi. Global: SHAP Summary Plot über den gesamten Datensatz — zeigt, wie jede Variable generell auf ein Objective wirkt. Lokal: SHAP für die empfohlene Lösung — zeigt, warum genau diese Konfiguration dieses Ergebnis liefert. "Der vorhergesagte Durchsatz ist 850 Einheiten/Tag. Das liegt hauptsächlich daran, dass Kräne = 8 (+120 gegenüber Durchschnitt) und Schichtmodell = 3-Schicht (+80), während Windgeschwindigkeit = 20 km/h (-60)."
+
+Bei Multi-Objective: SHAP pro Objective. Der Nutzer wählt, welches Objective er erklärt haben möchte.
+
+**Partial Dependence / ICE.** Zeigt, wie sich ein Objective verändert, wenn eine einzelne Entscheidungsvariable variiert wird, während alle anderen auf dem empfohlenen Wert bleiben. Das ist die direkte Antwort auf "Was passiert wenn ich einen Kran mehr einsetze?" PDP zeigt den Durchschnittseffekt, ICE zeigt den Effekt für verschiedene Kontexte.
+
+Besonders wertvoll: PDP berechnet um die empfohlene Lösung herum, nicht global. Der Nutzer will wissen, was in der Nähe des Optimums passiert, nicht wie das Modell sich am Rand des Suchraums verhält.
+
+**Trade-off-Analyse (Multi-Objective).** Bei einer Pareto-Front will der Nutzer verstehen: "Wenn ich von Lösung A zu Lösung B wechsle, was gewinne und was verliere ich?" Das Framework berechnet pro Paar benachbarter Pareto-Punkte den marginalen Trade-off: wie viel Einheiten Objective 1 gewinne ich pro Einheit Objective 2, die ich aufgebe? Das ist die Steigung entlang der Pareto-Front. Stellen, an denen der Trade-off steil wird, sind besonders informativ — dort "kostet" eine kleine Verbesserung in einem Objective plötzlich viel in einem anderen.
+
+**What-If-Simulation.** Der Nutzer setzt beliebige Werte für Entscheidungsvariablen und bekommt die vorhergesagten Objective-Werte plus Unsicherheit zurück. Das ist konzeptionell simpel — es ist ein predict-Aufruf auf dem SurrogateManager — aber die Analyse-Schicht verpackt es mit Kontext: Vergleich zur empfohlenen Lösung, Vergleich zum historischen Durchschnitt, Constraint-Status.
+
+**Szenario-Vergleich.** Wenn der Nutzer mehrere Szenarien definiert hat (verschiedene Belegungen der Kontextvariablen), zeigt die Analyse: wie unterscheiden sich die empfohlenen Lösungen zwischen Szenarien? Welche Entscheidungsvariablen sind szenariorobust (immer ähnlich), welche szenarioabhängig (ändern sich stark)? Das ist für TenneT essentiell — sie wollen nicht eine Lösung, die bei Normalbetrieb optimal ist aber bei Störfall versagt.
+
+---
+
+**Monotonie-Validierung — ein Sonderfall:**
+
+Wenn das Problem-Objekt MonotonicRelations definiert hat, prüft die Analyse post-hoc, ob das trainierte Ensemble diese Beziehungen tatsächlich einhält. Nicht nur ob die Constraints beim Training gesetzt wurden (das garantiert der SurrogateManager), sondern ob das resultierende Modell empirisch monoton ist — insbesondere in der Region um die empfohlene Lösung. Wenn ein Ensemble aus mehreren Modellen besteht, kann die gewichtete Kombination trotz individueller Monotonie nicht-monoton sein. Das muss erkannt und gemeldet werden.
+
+---
+
+**Das Analyse-Objekt:**
+
+Analog zu Problem-Objekt und OptimizationResult gibt es ein typisiertes AnalysisResult.
+
+Es enthält: die Summary (immer gefüllt — Ergebnis-Zusammenfassung, Constraint-Status, Surrogate-Qualität, Extrapolationswarnungen) und einen Accessor für Detail-Analysen, der lazy evaluiert. Das heißt: die Detail-Analyse wird erst berechnet, wenn sie abgerufen wird, nicht bei der Erstellung des AnalysisResult. Das spart Rechenzeit, weil nicht jeder Nutzer jede Analyse braucht.
+
+Die API sieht konzeptionell so aus: der Nutzer fragt das AnalysisResult nach Feature Importance für Objective X, bekommt das Ergebnis. Fragt nach SHAP für die Compromise-Solution, bekommt das Ergebnis. Fragt nach PDP für Variable Y auf Objective Z, bekommt das Ergebnis. Jede Anfrage wird beim ersten Mal berechnet und dann gecached.
+
+---
+
+**Was die Analyse-Schicht NICHT tut:**
+
+Sie visualisiert nicht. Sie generiert Daten und Strukturen, die kint als Plattform visualisiert. Das Framework liefert die SHAP-Werte als Array, nicht als Plot. Es liefert die Pareto-Front als Punktmenge, nicht als Grafik. Die Visualisierung ist Plattform-Verantwortung — kint weiß, wie seine UI aussieht, das Framework nicht.
+
+Sie interpretiert nicht in natürlicher Sprache. Es liefert keine Texte wie "Sie sollten mehr Kräne einsetzen weil...". Das ist die LLM-Schicht von kint, die auf den Framework-Outputs aufsetzt. Das Framework liefert die Zahlen und Strukturen, kint macht die Interpretation.
+
+---
+
+**Zusammenfassung der Gesamtarchitektur bis hier:**
+
+Problem-Objekt definiert das Problem deklarativ. SurrogateManager trainiert N + M Modelle daraus. Optimierer findet die besten Lösungen auf den Surrogates. Analyse-Schicht erklärt die Ergebnisse und validiert die Vertrauenswürdigkeit.
+
+Jede Schicht konsumiert die vorherige und das Problem-Objekt als gemeinsame Referenz. Keine Schicht trifft Entscheidungen, die einer anderen Schicht gehören. Keine Schicht visualisiert oder interpretiert — das ist kint's Aufgabe.
+
+---
