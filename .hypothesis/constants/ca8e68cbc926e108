@@ -1,0 +1,4 @@
+# file: /Users/jozef/Code/surrox/src/surrox/problem/variables.py
+# hypothesis_version: 6.151.9
+
+['CategoricalBounds', 'ContinuousBounds', 'IntegerBounds', 'OrdinalBounds', 'Variable', 'after', 'categorical', 'continuous', 'integer', 'ordinal', 'type']

@@ -4,6 +4,8 @@ from typing import TYPE_CHECKING
 
 from mapie.regression import SplitConformalRegressor
 
+from surrox.exceptions import ConfigurationError
+
 if TYPE_CHECKING:
     import numpy as np
     import pandas as pd
@@ -32,7 +34,7 @@ class ConformalCalibration:
         self, X: pd.DataFrame, coverage: float
     ) -> tuple[NDArray[np.floating], NDArray[np.floating], NDArray[np.floating]]:
         if not (0 < coverage < 1):
-            raise ValueError("coverage must be between 0 and 1 exclusive")
+            raise ConfigurationError("coverage must be between 0 and 1 exclusive")
 
         if coverage == self._default_coverage:
             scr = self._default_scr

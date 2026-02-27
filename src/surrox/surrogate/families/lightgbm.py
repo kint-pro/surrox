@@ -50,8 +50,8 @@ class LightGBMFamily:
         categorical_features: set[str],
     ) -> list[int]:
         return [
-            _DIRECTION_MAP.get(constraints.get(name), 0)
-            if name not in categorical_features
+            _DIRECTION_MAP.get(constraints[name], 0)
+            if name not in categorical_features and name in constraints
             else 0
             for name in feature_names
         ]

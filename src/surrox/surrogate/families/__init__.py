@@ -5,3 +5,7 @@ __all__ = [
     "LightGBMFamily",
     "XGBoostFamily",
 ]
+
+
+def __dir__() -> list[str]:
+    return __all__

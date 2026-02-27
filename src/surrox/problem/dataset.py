@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from pydantic import BaseModel, ConfigDict, model_validator
 
+from surrox.exceptions import ProblemDefinitionError
 from surrox.problem.definition import ProblemDefinition
 from surrox.problem.types import DType
 from surrox.problem.variables import Variable
@@ -9,12 +10,16 @@ from surrox.problem.variables import Variable
 
 def _validate_column_exists(df: pd.DataFrame, column: str, context: str) -> None:
     if column not in df.columns:
-        raise ValueError(f"{context}: column '{column}' not found in dataset")
+        raise ProblemDefinitionError(
+            f"{context}: column '{column}' not found in dataset"
+        )
 
 
 def _validate_no_missing_values(df: pd.DataFrame, column: str, context: str) -> None:
-    if df[column].isna().any():
-        raise ValueError(f"{context}: column '{column}' contains missing values")
+    if df[column].isna().any():  # type: ignore[truthy-bool]
+        raise ProblemDefinitionError(
+            f"{context}: column '{column}' contains missing values"
+        )
 
 
 def _validate_numeric_bounds(df: pd.DataFrame, variable: Variable) -> None:
@@ -22,7 +27,7 @@ def _validate_numeric_bounds(df: pd.DataFrame, variable: Variable) -> None:
     lower = variable.bounds.lower  # type: ignore[union-attr]
     upper = variable.bounds.upper  # type: ignore[union-attr]
     if (col < lower).any() or (col > upper).any():
-        raise ValueError(
+        raise ProblemDefinitionError(
             f"variable '{variable.name}': values outside bounds [{lower}, {upper}]"
         )
 
@@ -32,20 +37,24 @@ def _validate_categorical_values(df: pd.DataFrame, variable: Variable) -> None:
     valid_categories = set(variable.bounds.categories)  # type: ignore[union-attr]
     invalid = set(col.dropna().unique()) - valid_categories
     if invalid:
-        raise ValueError(f"variable '{variable.name}': invalid categories {invalid}")
+        raise ProblemDefinitionError(
+            f"variable '{variable.name}': invalid categories {invalid}"
+        )
 
 
 def _validate_integer_dtype(df: pd.DataFrame, variable: Variable) -> None:
     col = df[variable.name]
-    if np.issubdtype(col.dtype, np.integer):
+    if np.issubdtype(col.dtype, np.integer):  # pyright: ignore[reportArgumentType]
         return
     if not (col == col.astype(int)).all():
-        raise ValueError(f"variable '{variable.name}': contains non-integer values")
+        raise ProblemDefinitionError(
+            f"variable '{variable.name}': contains non-integer values"
+        )
 
 
 def _validate_numeric_target_dtype(df: pd.DataFrame, column: str, context: str) -> None:
     if not pd.api.types.is_numeric_dtype(df[column]):
-        raise ValueError(
+        raise ProblemDefinitionError(
             f"{context}: column '{column}' expected numeric dtype, "
             f"got {df[column].dtype}"
         )
@@ -54,7 +63,7 @@ def _validate_numeric_target_dtype(df: pd.DataFrame, column: str, context: str) 
 def _validate_numeric_dtype(df: pd.DataFrame, variable: Variable) -> None:
     col = df[variable.name]
     if not pd.api.types.is_numeric_dtype(col):
-        raise ValueError(
+        raise ProblemDefinitionError(
             f"variable '{variable.name}': expected numeric dtype, got {col.dtype}"
         )
 

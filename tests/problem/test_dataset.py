@@ -3,6 +3,7 @@ import pandas as pd
 import pytest
 from pydantic import ValidationError
 
+from surrox.exceptions import ProblemDefinitionError
 from surrox.problem.constraints import DataConstraint
 from surrox.problem.dataset import BoundDataset
 from surrox.problem.definition import ProblemDefinition
@@ -74,13 +75,13 @@ class TestBoundDatasetColumnExistence:
     def test_missing_variable_column_raises(self) -> None:
         problem = make_simple_problem()
         df = pd.DataFrame({"wrong_name": [1.0], "y_col": [10.0]})
-        with pytest.raises(ValidationError, match="column 'x' not found"):
+        with pytest.raises(ProblemDefinitionError, match="column 'x' not found"):
             BoundDataset(problem=problem, dataframe=df)
 
     def test_missing_objective_column_raises(self) -> None:
         problem = make_simple_problem()
         df = pd.DataFrame({"x": [1.0], "wrong_col": [10.0]})
-        with pytest.raises(ValidationError, match="column 'y_col' not found"):
+        with pytest.raises(ProblemDefinitionError, match="column 'y_col' not found"):
             BoundDataset(problem=problem, dataframe=df)
 
     def test_missing_data_constraint_column_raises(self) -> None:
@@ -89,7 +90,7 @@ class TestBoundDatasetColumnExistence:
         )
         problem = make_simple_problem(data_constraints=(dc,))
         df = pd.DataFrame({"x": [1.0], "y_col": [10.0]})
-        with pytest.raises(ValidationError, match="column 'dc_col' not found"):
+        with pytest.raises(ProblemDefinitionError, match="column 'dc_col' not found"):
             BoundDataset(problem=problem, dataframe=df)
 
 
@@ -98,7 +99,7 @@ class TestBoundDatasetMissingValues:
         problem = make_simple_problem()
         df = pd.DataFrame({"x": [1.0, np.nan, 3.0], "y_col": [10.0, 20.0, 30.0]})
         with pytest.raises(
-            ValidationError, match="variable 'x'.*contains missing values"
+            ProblemDefinitionError, match="variable 'x'.*contains missing values"
         ):
             BoundDataset(problem=problem, dataframe=df)
 
@@ -106,7 +107,7 @@ class TestBoundDatasetMissingValues:
         problem = make_simple_problem()
         df = pd.DataFrame({"x": [1.0, 2.0], "y_col": [10.0, np.nan]})
         with pytest.raises(
-            ValidationError, match="objective 'y'.*contains missing values"
+            ProblemDefinitionError, match="objective 'y'.*contains missing values"
         ):
             BoundDataset(problem=problem, dataframe=df)
 
@@ -117,7 +118,7 @@ class TestBoundDatasetMissingValues:
         problem = make_simple_problem(data_constraints=(dc,))
         df = pd.DataFrame({"x": [1.0], "y_col": [10.0], "dc_col": [np.nan]})
         with pytest.raises(
-            ValidationError, match="data constraint 'dc'.*contains missing values"
+            ProblemDefinitionError, match="data constraint 'dc'.*contains missing values"
         ):
             BoundDataset(problem=problem, dataframe=df)
 
@@ -131,7 +132,7 @@ class TestBoundDatasetMissingValues:
         problem = make_simple_problem(variables=(var,))
         df = pd.DataFrame({"cat": ["a", None], "y_col": [1.0, 2.0]})
         with pytest.raises(
-            ValidationError, match="variable 'cat'.*contains missing values"
+            ProblemDefinitionError, match="variable 'cat'.*contains missing values"
         ):
             BoundDataset(problem=problem, dataframe=df)
 
@@ -140,13 +141,13 @@ class TestBoundDatasetNumericValidation:
     def test_values_below_lower_bound_raises(self) -> None:
         problem = make_simple_problem()
         df = pd.DataFrame({"x": [-1.0, 5.0], "y_col": [10.0, 20.0]})
-        with pytest.raises(ValidationError, match="values outside bounds"):
+        with pytest.raises(ProblemDefinitionError, match="values outside bounds"):
             BoundDataset(problem=problem, dataframe=df)
 
     def test_values_above_upper_bound_raises(self) -> None:
         problem = make_simple_problem()
         df = pd.DataFrame({"x": [5.0, 11.0], "y_col": [10.0, 20.0]})
-        with pytest.raises(ValidationError, match="values outside bounds"):
+        with pytest.raises(ProblemDefinitionError, match="values outside bounds"):
             BoundDataset(problem=problem, dataframe=df)
 
     def test_values_at_bounds_accepted(self) -> None:
@@ -158,7 +159,7 @@ class TestBoundDatasetNumericValidation:
     def test_non_numeric_dtype_for_continuous_variable_raises(self) -> None:
         problem = make_simple_problem()
         df = pd.DataFrame({"x": ["a", "b"], "y_col": [10.0, 20.0]})
-        with pytest.raises(ValidationError, match="expected numeric dtype"):
+        with pytest.raises(ProblemDefinitionError, match="expected numeric dtype"):
             BoundDataset(problem=problem, dataframe=df)
 
     def test_integer_variable_with_float_values_raises(self) -> None:
@@ -170,7 +171,7 @@ class TestBoundDatasetNumericValidation:
         )
         problem = make_simple_problem(variables=(var,))
         df = pd.DataFrame({"count": [1.5, 2.7], "y_col": [10.0, 20.0]})
-        with pytest.raises(ValidationError, match="contains non-integer values"):
+        with pytest.raises(ProblemDefinitionError, match="contains non-integer values"):
             BoundDataset(problem=problem, dataframe=df)
 
     def test_integer_variable_with_integer_values_accepted(self) -> None:
@@ -206,7 +207,7 @@ class TestBoundDatasetNumericValidation:
         )
         problem = make_simple_problem(variables=(var,))
         df = pd.DataFrame({"count": [0, 11], "y_col": [10.0, 20.0]})
-        with pytest.raises(ValidationError, match="values outside bounds"):
+        with pytest.raises(ProblemDefinitionError, match="values outside bounds"):
             BoundDataset(problem=problem, dataframe=df)
 
 
@@ -220,7 +221,7 @@ class TestBoundDatasetCategoricalValidation:
         )
         problem = make_simple_problem(variables=(var,))
         df = pd.DataFrame({"cat": ["a", "c"], "y_col": [10.0, 20.0]})
-        with pytest.raises(ValidationError, match="invalid categories"):
+        with pytest.raises(ProblemDefinitionError, match="invalid categories"):
             BoundDataset(problem=problem, dataframe=df)
 
     def test_valid_categories_accepted(self) -> None:
@@ -241,7 +242,7 @@ class TestBoundDatasetTargetDtypeValidation:
         problem = make_simple_problem()
         df = pd.DataFrame({"x": [1.0, 2.0], "y_col": ["high", "low"]})
         with pytest.raises(
-            ValidationError, match="objective 'y'.*expected numeric dtype"
+            ProblemDefinitionError, match="objective 'y'.*expected numeric dtype"
         ):
             BoundDataset(problem=problem, dataframe=df)
 
@@ -254,7 +255,7 @@ class TestBoundDatasetTargetDtypeValidation:
             {"x": [1.0, 2.0], "y_col": [10.0, 20.0], "dc_col": ["ok", "bad"]}
         )
         with pytest.raises(
-            ValidationError, match="data constraint 'dc'.*expected numeric dtype"
+            ProblemDefinitionError, match="data constraint 'dc'.*expected numeric dtype"
         ):
             BoundDataset(problem=problem, dataframe=df)
 

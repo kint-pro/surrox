@@ -44,9 +44,21 @@ src = ["src"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
+[tool.pyright]
+pythonVersion = "3.13"
+include = ["src"]
+typeCheckingMode = "basic"
+reportMissingImports = true
+reportMissingTypeStubs = false
+reportAttributeAccessIssue = "warning"
+
 [dependency-groups]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=6.0",
     "ruff>=0.9",
+    "pyright>=1.1",
+    "pip-audit>=2.7",
+    "bandit>=1.7",
+    "hypothesis>=6.100",
 ]

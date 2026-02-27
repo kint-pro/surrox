@@ -1,6 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
+from surrox.exceptions import ProblemDefinitionError
 from surrox.problem.constraints import DataConstraint, LinearConstraint
 from surrox.problem.definition import ProblemDefinition
 from surrox.problem.domain_knowledge import MonotonicRelation
@@ -68,7 +69,7 @@ class TestProblemDefinitionMinimal:
 
 class TestProblemDefinitionValidation:
     def test_no_objectives_raises(self) -> None:
-        with pytest.raises(ValidationError, match="at least one objective is required"):
+        with pytest.raises(ProblemDefinitionError, match="at least one objective is required"):
             ProblemDefinition(
                 variables=(make_decision_var(),),
                 objectives=(),
@@ -76,7 +77,7 @@ class TestProblemDefinitionValidation:
 
     def test_no_decision_variable_raises(self) -> None:
         with pytest.raises(
-            ValidationError, match="at least one decision variable is required"
+            ProblemDefinitionError, match="at least one decision variable is required"
         ):
             ProblemDefinition(
                 variables=(make_context_var(),),
@@ -84,14 +85,14 @@ class TestProblemDefinitionValidation:
             )
 
     def test_duplicate_variable_names_raises(self) -> None:
-        with pytest.raises(ValidationError, match="variable names must be unique"):
+        with pytest.raises(ProblemDefinitionError, match="variable names must be unique"):
             ProblemDefinition(
                 variables=(make_decision_var("x"), make_decision_var("x")),
                 objectives=(make_objective(),),
             )
 
     def test_duplicate_objective_names_raises(self) -> None:
-        with pytest.raises(ValidationError, match="objective names must be unique"):
+        with pytest.raises(ProblemDefinitionError, match="objective names must be unique"):
             ProblemDefinition(
                 variables=(make_decision_var(),),
                 objectives=(make_objective("obj"), make_objective("obj")),
@@ -110,7 +111,7 @@ class TestProblemDefinitionValidation:
             operator=ConstraintOperator.LE,
             limit=1.0,
         )
-        with pytest.raises(ValidationError, match="constraint names must be unique"):
+        with pytest.raises(ProblemDefinitionError, match="constraint names must be unique"):
             ProblemDefinition(
                 variables=(make_decision_var("x"),),
                 objectives=(make_objective(),),
@@ -122,7 +123,7 @@ class TestProblemDefinitionValidation:
         ctx = make_context_var("ctx")
         s1 = Scenario(name="same", context_values={"ctx": "a"})
         s2 = Scenario(name="same", context_values={"ctx": "b"})
-        with pytest.raises(ValidationError, match="scenario names must be unique"):
+        with pytest.raises(ProblemDefinitionError, match="scenario names must be unique"):
             ProblemDefinition(
                 variables=(make_decision_var(), ctx),
                 objectives=(make_objective(),),
@@ -137,7 +138,7 @@ class TestProblemDefinitionValidation:
             rhs=1.0,
         )
         with pytest.raises(
-            ValidationError,
+            ProblemDefinitionError,
             match="unknown or non-decision variable 'unknown_var'",
         ):
             ProblemDefinition(
@@ -154,7 +155,7 @@ class TestProblemDefinitionValidation:
             rhs=1.0,
         )
         with pytest.raises(
-            ValidationError,
+            ProblemDefinitionError,
             match="unknown or non-decision variable 'ctx'",
         ):
             ProblemDefinition(
@@ -184,7 +185,7 @@ class TestProblemDefinitionValidation:
             direction=MonotonicDirection.INCREASING,
         )
         with pytest.raises(
-            ValidationError,
+            ProblemDefinitionError,
             match="unknown or non-decision variable 'ghost_var'",
         ):
             ProblemDefinition(
@@ -201,7 +202,7 @@ class TestProblemDefinitionValidation:
             direction=MonotonicDirection.INCREASING,
         )
         with pytest.raises(
-            ValidationError,
+            ProblemDefinitionError,
             match="unknown or non-decision variable 'ctx'",
         ):
             ProblemDefinition(
@@ -223,7 +224,7 @@ class TestProblemDefinitionValidation:
             direction=MonotonicDirection.INCREASING,
         )
         with pytest.raises(
-            ValidationError,
+            ProblemDefinitionError,
             match="non-numeric variable 'method'",
         ):
             ProblemDefinition(
@@ -245,7 +246,7 @@ class TestProblemDefinitionValidation:
             direction=MonotonicDirection.INCREASING,
         )
         with pytest.raises(
-            ValidationError,
+            ProblemDefinitionError,
             match="non-numeric variable 'quality'",
         ):
             ProblemDefinition(
@@ -261,7 +262,7 @@ class TestProblemDefinitionValidation:
             direction=MonotonicDirection.INCREASING,
         )
         with pytest.raises(
-            ValidationError, match="unknown target 'nonexistent_target'"
+            ProblemDefinitionError, match="unknown target 'nonexistent_target'"
         ):
             ProblemDefinition(
                 variables=(make_decision_var("x"),),
@@ -280,7 +281,7 @@ class TestProblemDefinitionValidation:
             objective_or_constraint="obj",
             direction=MonotonicDirection.DECREASING,
         )
-        with pytest.raises(ValidationError, match="contradictory monotonic relations"):
+        with pytest.raises(ProblemDefinitionError, match="contradictory monotonic relations"):
             ProblemDefinition(
                 variables=(make_decision_var("x"),),
                 objectives=(make_objective("obj"),),
@@ -329,7 +330,7 @@ class TestProblemDefinitionValidation:
     def test_scenario_unknown_context_variable_raises(self) -> None:
         s = Scenario(name="bad_scenario", context_values={"nonexistent": "value"})
         with pytest.raises(
-            ValidationError,
+            ProblemDefinitionError,
             match="unknown context variable 'nonexistent'",
         ):
             ProblemDefinition(
@@ -346,7 +347,7 @@ class TestProblemDefinitionValidation:
             bounds=ContinuousBounds(lower=0.0, upper=50.0),
         )
         s = Scenario(name="bad", context_values={"wind": "fast"})
-        with pytest.raises(ValidationError, match="expects numeric value"):
+        with pytest.raises(ProblemDefinitionError, match="expects numeric value"):
             ProblemDefinition(
                 variables=(make_decision_var("x"), ctx),
                 objectives=(make_objective(),),
@@ -361,7 +362,7 @@ class TestProblemDefinitionValidation:
             bounds=ContinuousBounds(lower=0.0, upper=50.0),
         )
         s = Scenario(name="bad", context_values={"wind": 100.0})
-        with pytest.raises(ValidationError, match="outside bounds"):
+        with pytest.raises(ProblemDefinitionError, match="outside bounds"):
             ProblemDefinition(
                 variables=(make_decision_var("x"), ctx),
                 objectives=(make_objective(),),
@@ -371,7 +372,7 @@ class TestProblemDefinitionValidation:
     def test_scenario_invalid_category_raises(self) -> None:
         ctx = make_context_var("ctx")
         s = Scenario(name="bad", context_values={"ctx": "nonexistent"})
-        with pytest.raises(ValidationError, match="not in categories"):
+        with pytest.raises(ProblemDefinitionError, match="not in categories"):
             ProblemDefinition(
                 variables=(make_decision_var("x"), ctx),
                 objectives=(make_objective(),),
@@ -381,7 +382,7 @@ class TestProblemDefinitionValidation:
     def test_scenario_referencing_decision_variable_raises(self) -> None:
         s = Scenario(name="bad", context_values={"x": 0.5})
         with pytest.raises(
-            ValidationError, match="unknown context variable 'x'"
+            ProblemDefinitionError, match="unknown context variable 'x'"
         ):
             ProblemDefinition(
                 variables=(make_decision_var("x"),),
@@ -397,7 +398,7 @@ class TestProblemDefinitionValidation:
             bounds=IntegerBounds(lower=0, upper=10),
         )
         s = Scenario(name="bad", context_values={"level": 2.5})
-        with pytest.raises(ValidationError, match="expects integer value"):
+        with pytest.raises(ProblemDefinitionError, match="expects integer value"):
             ProblemDefinition(
                 variables=(make_decision_var("x"), ctx),
                 objectives=(make_objective(),),
@@ -412,7 +413,7 @@ class TestProblemDefinitionValidation:
             bounds=IntegerBounds(lower=0, upper=10),
         )
         s = Scenario(name="bad", context_values={"level": 20})
-        with pytest.raises(ValidationError, match="outside bounds"):
+        with pytest.raises(ProblemDefinitionError, match="outside bounds"):
             ProblemDefinition(
                 variables=(make_decision_var("x"), ctx),
                 objectives=(make_objective(),),
@@ -442,7 +443,7 @@ class TestProblemDefinitionValidation:
             bounds=OrdinalBounds(categories=("low", "medium", "high")),
         )
         s = Scenario(name="bad", context_values={"quality": "extreme"})
-        with pytest.raises(ValidationError, match="not in categories"):
+        with pytest.raises(ProblemDefinitionError, match="not in categories"):
             ProblemDefinition(
                 variables=(make_decision_var("x"), ctx),
                 objectives=(make_objective(),),

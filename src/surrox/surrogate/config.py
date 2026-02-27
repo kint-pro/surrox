@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
+from surrox.exceptions import ConfigurationError
 from surrox.surrogate.families import LightGBMFamily, XGBoostFamily
 from surrox.surrogate.protocol import EstimatorFamily
 
 
 def _default_families() -> tuple[EstimatorFamily, ...]:
-    return (XGBoostFamily(), LightGBMFamily())
+    return (XGBoostFamily(), LightGBMFamily())  # pyright: ignore[reportReturnType]
 
 
 class TrainingConfig(BaseModel):
@@ -29,30 +30,34 @@ class TrainingConfig(BaseModel):
     @model_validator(mode="after")
     def _validate_config(self) -> TrainingConfig:
         if self.n_trials < 1:
-            raise ValueError("n_trials must be >= 1")
+            raise ConfigurationError("n_trials must be >= 1")
         if self.cv_folds < 2:
-            raise ValueError("cv_folds must be >= 2")
+            raise ConfigurationError("cv_folds must be >= 2")
         if not (0 < self.calibration_fraction < 1):
-            raise ValueError("calibration_fraction must be between 0 and 1 exclusive")
+            raise ConfigurationError(
+                "calibration_fraction must be between 0 and 1 exclusive"
+            )
         if self.ensemble_size < 1:
-            raise ValueError("ensemble_size must be >= 1")
+            raise ConfigurationError("ensemble_size must be >= 1")
         if not (0 < self.diversity_threshold <= 1):
-            raise ValueError(
+            raise ConfigurationError(
                 "diversity_threshold must be between 0 (exclusive) and 1 (inclusive)"
             )
         if self.softmax_temperature <= 0:
-            raise ValueError("softmax_temperature must be > 0")
+            raise ConfigurationError("softmax_temperature must be > 0")
         if not (0 < self.default_coverage < 1):
-            raise ValueError("default_coverage must be between 0 and 1 exclusive")
+            raise ConfigurationError(
+                "default_coverage must be between 0 and 1 exclusive"
+            )
         if len(self.estimator_families) == 0:
-            raise ValueError("estimator_families must not be empty")
+            raise ConfigurationError("estimator_families must not be empty")
         family_names = [f.name for f in self.estimator_families]
         if len(family_names) != len(set(family_names)):
-            raise ValueError("estimator family names must be unique")
+            raise ConfigurationError("estimator family names must be unique")
         if self.n_threads is not None and self.n_threads < 1:
-            raise ValueError("n_threads must be >= 1 if set")
+            raise ConfigurationError("n_threads must be >= 1 if set")
         if self.study_timeout_s < 1:
-            raise ValueError("study_timeout_s must be >= 1")
+            raise ConfigurationError("study_timeout_s must be >= 1")
         if self.min_r2 is not None and not (0 < self.min_r2 < 1):
-            raise ValueError("min_r2 must be between 0 and 1 exclusive if set")
+            raise ConfigurationError("min_r2 must be between 0 and 1 exclusive if set")
         return self

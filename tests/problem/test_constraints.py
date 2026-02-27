@@ -1,6 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
+from surrox.exceptions import ProblemDefinitionError
 from surrox.problem.constraints import DataConstraint, LinearConstraint
 from surrox.problem.types import ConstraintOperator
 
@@ -55,7 +56,7 @@ class TestLinearConstraint:
         assert lc.coefficients["y"] == -1.0
 
     def test_empty_coefficients_raises(self) -> None:
-        with pytest.raises(ValidationError, match="coefficients must not be empty"):
+        with pytest.raises(ProblemDefinitionError, match="coefficients must not be empty"):
             LinearConstraint(
                 name="empty",
                 coefficients={},
@@ -64,7 +65,7 @@ class TestLinearConstraint:
             )
 
     def test_zero_coefficient_raises(self) -> None:
-        with pytest.raises(ValidationError, match="coefficients must not be zero"):
+        with pytest.raises(ProblemDefinitionError, match="coefficients must not be zero"):
             LinearConstraint(
                 name="zero",
                 coefficients={"x": 1.0, "y": 0.0},
@@ -130,8 +131,49 @@ class TestDataConstraint:
             column="temperature",
             operator=ConstraintOperator.EQ,
             limit=25.0,
+            tolerance=0.5,
         )
         assert dc.operator == ConstraintOperator.EQ
+        assert dc.tolerance == 0.5
+
+    def test_eq_without_tolerance_raises(self) -> None:
+        with pytest.raises(ProblemDefinitionError, match="tolerance is required"):
+            DataConstraint(
+                name="c",
+                column="x",
+                operator=ConstraintOperator.EQ,
+                limit=1.0,
+            )
+
+    def test_non_eq_with_tolerance_raises(self) -> None:
+        with pytest.raises(ProblemDefinitionError, match="tolerance must be None"):
+            DataConstraint(
+                name="c",
+                column="x",
+                operator=ConstraintOperator.LE,
+                limit=1.0,
+                tolerance=0.5,
+            )
+
+    def test_negative_tolerance_raises(self) -> None:
+        with pytest.raises(ProblemDefinitionError, match="tolerance must be positive"):
+            DataConstraint(
+                name="c",
+                column="x",
+                operator=ConstraintOperator.EQ,
+                limit=1.0,
+                tolerance=-0.1,
+            )
+
+    def test_zero_tolerance_raises(self) -> None:
+        with pytest.raises(ProblemDefinitionError, match="tolerance must be positive"):
+            DataConstraint(
+                name="c",
+                column="x",
+                operator=ConstraintOperator.EQ,
+                limit=1.0,
+                tolerance=0.0,
+            )
 
     def test_create_with_negative_limit(self) -> None:
         dc = DataConstraint(
@@ -184,6 +226,18 @@ class TestDataConstraint:
             column="co2",
             operator=ConstraintOperator.LE,
             limit=500.0,
+        )
+        data = dc.model_dump()
+        reconstructed = DataConstraint(**data)
+        assert reconstructed == dc
+
+    def test_serialization_round_trip_eq_with_tolerance(self) -> None:
+        dc = DataConstraint(
+            name="exact_temp",
+            column="temperature",
+            operator=ConstraintOperator.EQ,
+            limit=25.0,
+            tolerance=0.5,
         )
         data = dc.model_dump()
         reconstructed = DataConstraint(**data)

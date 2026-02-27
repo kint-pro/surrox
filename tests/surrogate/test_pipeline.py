@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from surrox.exceptions import SurrogateTrainingError
 from surrox.problem.definition import ProblemDefinition
 from surrox.surrogate.config import TrainingConfig
 from surrox.surrogate.pipeline import (
@@ -20,17 +21,17 @@ class TestValidateMinimumData:
 
     def test_insufficient_data_raises(self) -> None:
         config = TrainingConfig(cv_folds=5, calibration_fraction=0.2)
-        with pytest.raises(ValueError, match="minimum is 500"):
+        with pytest.raises(SurrogateTrainingError, match="minimum is 500"):
             _validate_minimum_data(499, config)
 
     def test_minimum_driven_by_calibration(self) -> None:
         config = TrainingConfig(cv_folds=2, calibration_fraction=0.1)
-        with pytest.raises(ValueError, match="minimum is 1000"):
+        with pytest.raises(SurrogateTrainingError, match="minimum is 1000"):
             _validate_minimum_data(999, config)
 
     def test_minimum_driven_by_cv_folds(self) -> None:
         config = TrainingConfig(cv_folds=10, calibration_fraction=0.5)
-        with pytest.raises(ValueError, match="minimum is 1000"):
+        with pytest.raises(SurrogateTrainingError, match="minimum is 1000"):
             _validate_minimum_data(999, config)
 
 
@@ -90,7 +91,7 @@ class TestTrainSurrogate:
         synthetic_dataframe: pd.DataFrame,
         training_config: TrainingConfig,
     ) -> None:
-        with pytest.raises(ValueError, match="minimum"):
+        with pytest.raises(SurrogateTrainingError, match="minimum"):
             train_surrogate(
                 problem=problem_definition,
                 dataset_df=synthetic_dataframe.head(50),
@@ -121,7 +122,7 @@ class TestTrainSurrogate:
             min_r2=0.9,
         )
 
-        with pytest.raises(ValueError, match="R².*below minimum threshold"):
+        with pytest.raises(SurrogateTrainingError, match="R².*below minimum threshold"):
             train_surrogate(
                 problem=problem_definition,
                 dataset_df=df,

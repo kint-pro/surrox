@@ -1,6 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
+from surrox.exceptions import ProblemDefinitionError
 from surrox.problem.scenarios import Scenario
 
 
@@ -25,9 +26,8 @@ class TestScenario:
         assert scenario.context_values["load"] == 42.5
 
     def test_empty_context_values_raises(self) -> None:
-        """Test that an empty context_values dict raises a ValidationError."""
         with pytest.raises(
-            ValidationError, match="at least one context variable value"
+            ProblemDefinitionError, match="at least one context variable value"
         ):
             Scenario(name="empty", context_values={})
 

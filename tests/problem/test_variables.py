@@ -1,6 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
+from surrox.exceptions import ProblemDefinitionError
 from surrox.problem.types import DType, Role
 from surrox.problem.variables import (
     CategoricalBounds,
@@ -37,13 +38,11 @@ class TestContinuousBounds:
         assert bounds.type == "continuous"
 
     def test_lower_equal_to_upper_raises(self) -> None:
-        """Test that lower == upper raises a ValidationError."""
-        with pytest.raises(ValidationError, match="lower .* must be less than upper"):
+        with pytest.raises(ProblemDefinitionError, match="lower .* must be less than upper"):
             ContinuousBounds(lower=5.0, upper=5.0)
 
     def test_lower_greater_than_upper_raises(self) -> None:
-        """Test that lower > upper raises a ValidationError."""
-        with pytest.raises(ValidationError, match="lower .* must be less than upper"):
+        with pytest.raises(ProblemDefinitionError, match="lower .* must be less than upper"):
             ContinuousBounds(lower=10.0, upper=1.0)
 
     def test_is_frozen(self) -> None:
@@ -75,13 +74,11 @@ class TestIntegerBounds:
         assert bounds.upper == -1
 
     def test_lower_equal_to_upper_raises(self) -> None:
-        """Test that lower == upper raises a ValidationError."""
-        with pytest.raises(ValidationError, match="lower .* must be less than upper"):
+        with pytest.raises(ProblemDefinitionError, match="lower .* must be less than upper"):
             IntegerBounds(lower=5, upper=5)
 
     def test_lower_greater_than_upper_raises(self) -> None:
-        """Test that lower > upper raises a ValidationError."""
-        with pytest.raises(ValidationError, match="lower .* must be less than upper"):
+        with pytest.raises(ProblemDefinitionError, match="lower .* must be less than upper"):
             IntegerBounds(lower=10, upper=1)
 
     def test_is_frozen(self) -> None:
@@ -112,18 +109,15 @@ class TestCategoricalBounds:
         assert len(bounds.categories) == 50
 
     def test_single_category_raises(self) -> None:
-        """Test that fewer than 2 categories raises a ValidationError."""
-        with pytest.raises(ValidationError, match="at least 2 categories"):
+        with pytest.raises(ProblemDefinitionError, match="at least 2 categories"):
             CategoricalBounds(categories=("only_one",))
 
     def test_zero_categories_raises(self) -> None:
-        """Test that empty categories raises a ValidationError."""
-        with pytest.raises(ValidationError, match="at least 2 categories"):
+        with pytest.raises(ProblemDefinitionError, match="at least 2 categories"):
             CategoricalBounds(categories=())
 
     def test_duplicate_categories_raises(self) -> None:
-        """Test that duplicate categories raises a ValidationError."""
-        with pytest.raises(ValidationError, match="categories must be unique"):
+        with pytest.raises(ProblemDefinitionError, match="categories must be unique"):
             CategoricalBounds(categories=("a", "b", "a"))
 
     def test_is_frozen(self) -> None:
@@ -154,18 +148,15 @@ class TestOrdinalBounds:
         assert len(bounds.categories) == 10
 
     def test_single_category_raises(self) -> None:
-        """Test that fewer than 2 ordinal categories raises a ValidationError."""
-        with pytest.raises(ValidationError, match="at least 2 categories"):
+        with pytest.raises(ProblemDefinitionError, match="at least 2 categories"):
             OrdinalBounds(categories=("only_one",))
 
     def test_zero_categories_raises(self) -> None:
-        """Test that empty ordinal categories raises a ValidationError."""
-        with pytest.raises(ValidationError, match="at least 2 categories"):
+        with pytest.raises(ProblemDefinitionError, match="at least 2 categories"):
             OrdinalBounds(categories=())
 
     def test_duplicate_categories_raises(self) -> None:
-        """Test that duplicate ordinal categories raises a ValidationError."""
-        with pytest.raises(ValidationError, match="categories must be unique"):
+        with pytest.raises(ProblemDefinitionError, match="categories must be unique"):
             OrdinalBounds(categories=("a", "b", "a"))
 
     def test_is_frozen(self) -> None:
@@ -230,8 +221,7 @@ class TestVariable:
         assert var.role == Role.CONTEXT
 
     def test_continuous_dtype_with_integer_bounds_raises(self) -> None:
-        """Test that continuous dtype with integer bounds raises ValidationError."""
-        with pytest.raises(ValidationError, match="requires continuous bounds"):
+        with pytest.raises(ProblemDefinitionError, match="requires continuous bounds"):
             Variable(
                 name="x",
                 dtype=DType.CONTINUOUS,
@@ -240,8 +230,7 @@ class TestVariable:
             )
 
     def test_integer_dtype_with_continuous_bounds_raises(self) -> None:
-        """Test that integer dtype with continuous bounds raises ValidationError."""
-        with pytest.raises(ValidationError, match="requires integer bounds"):
+        with pytest.raises(ProblemDefinitionError, match="requires integer bounds"):
             Variable(
                 name="x",
                 dtype=DType.INTEGER,
@@ -250,8 +239,7 @@ class TestVariable:
             )
 
     def test_categorical_dtype_with_ordinal_bounds_raises(self) -> None:
-        """Test that categorical dtype with ordinal bounds raises ValidationError."""
-        with pytest.raises(ValidationError, match="requires categorical bounds"):
+        with pytest.raises(ProblemDefinitionError, match="requires categorical bounds"):
             Variable(
                 name="x",
                 dtype=DType.CATEGORICAL,
@@ -260,8 +248,7 @@ class TestVariable:
             )
 
     def test_ordinal_dtype_with_categorical_bounds_raises(self) -> None:
-        """Test that ordinal dtype with categorical bounds raises ValidationError."""
-        with pytest.raises(ValidationError, match="requires ordinal bounds"):
+        with pytest.raises(ProblemDefinitionError, match="requires ordinal bounds"):
             Variable(
                 name="x",
                 dtype=DType.ORDINAL,

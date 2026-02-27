@@ -1,0 +1,4 @@
+# file: /Users/jozef/Code/surrox/src/surrox/optimizer/algorithm.py
+# hypothesis_version: 6.151.9
+
+[1.0, 3.0, 'crossover', 'das-dennis', 'mutation', 'sampling']

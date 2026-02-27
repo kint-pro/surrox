@@ -9,6 +9,7 @@ import optuna
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import KFold, train_test_split
 
+from surrox.exceptions import SurrogateTrainingError
 from surrox.problem.types import DType, MonotonicDirection
 from surrox.surrogate.conformal import ConformalCalibration
 from surrox.surrogate.ensemble import Ensemble, EnsembleAdapter
@@ -161,7 +162,7 @@ def train_surrogate(
     completed_records = [r for r in trial_records if r.status == "completed"]
     if not completed_records:
         n = len(trial_records)
-        raise ValueError(
+        raise SurrogateTrainingError(
             f"surrogate '{column}': all {n} trials were "
             f"pruned or failed — no completed trials"
         )
@@ -206,7 +207,7 @@ def _validate_minimum_data(n_rows: int, config: TrainingConfig) -> None:
     minimum = max(min_train_pool, min_calib)
     if n_rows < minimum:
         cal = config.calibration_fraction
-        raise ValueError(
+        raise SurrogateTrainingError(
             f"dataset has {n_rows} rows, but minimum is "
             f"{minimum} (cv_folds={config.cv_folds}, "
             f"calibration_fraction={cal})"
@@ -228,7 +229,7 @@ def _validate_quality_gate(
     predictions = ensemble.predict(X_calib_df)
     r2 = r2_score(y_calib, predictions)
     if r2 < config.min_r2:
-        raise ValueError(
+        raise SurrogateTrainingError(
             f"surrogate '{column}': ensemble R² on calibration set is {r2:.4f}, "
             f"below minimum threshold {config.min_r2} — surrogate quality insufficient"
         )

@@ -3,6 +3,7 @@ import pandas as pd
 import pytest
 from sklearn.linear_model import LinearRegression
 
+from surrox.exceptions import ConfigurationError
 from surrox.surrogate.conformal import ConformalCalibration
 from surrox.surrogate.ensemble import Ensemble, EnsembleAdapter
 from surrox.surrogate.models import EnsembleMember
@@ -65,7 +66,7 @@ class TestConformalCalibration:
     def test_invalid_coverage_raises(self) -> None:
         conformal = _make_conformal()
         X = pd.DataFrame({"f1": [1.0], "f2": [2.0], "f3": [3.0]})
-        with pytest.raises(ValueError, match="coverage"):
+        with pytest.raises(ConfigurationError, match="coverage"):
             conformal.prediction_interval(X, coverage=0.0)
-        with pytest.raises(ValueError, match="coverage"):
+        with pytest.raises(ConfigurationError, match="coverage"):
             conformal.prediction_interval(X, coverage=1.0)
