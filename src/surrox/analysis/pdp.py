@@ -1,12 +1,13 @@
-from numpy.typing import NDArray
 from pydantic import BaseModel, ConfigDict
+
+from surrox.types import NumpyArray
 
 
 class PDPICEResult(BaseModel):
-    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
+    model_config = ConfigDict(frozen=True)
 
     variable_name: str
     column: str
-    grid_values: NDArray
-    pdp_values: NDArray
-    ice_values: NDArray
+    grid_values: NumpyArray
+    pdp_values: NumpyArray
+    ice_values: NumpyArray

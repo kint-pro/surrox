@@ -1,6 +1,8 @@
+from pathlib import Path
 from typing import Any
 
 import optuna
+from sklearn.base import BaseEstimator
 from xgboost import XGBRegressor
 
 from surrox.problem.types import MonotonicDirection
@@ -55,3 +57,13 @@ class XGBoostFamily:
             for name, direction in constraints.items()
             if name not in categorical_features
         }
+
+    def save_model(self, model: BaseEstimator, path: Path) -> None:
+        if not isinstance(model, XGBRegressor):
+            raise TypeError(f"expected XGBRegressor, got {type(model).__name__}")
+        model.save_model(path.with_suffix(".ubj"))
+
+    def load_model(self, path: Path) -> XGBRegressor:
+        model = XGBRegressor()
+        model.load_model(path.with_suffix(".ubj"))
+        return model

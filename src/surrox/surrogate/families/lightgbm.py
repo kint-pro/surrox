@@ -1,7 +1,10 @@
+from pathlib import Path
 from typing import Any
 
+import lightgbm as lgb
 import optuna
 from lightgbm import LGBMRegressor
+from sklearn.base import BaseEstimator
 
 from surrox.problem.types import MonotonicDirection
 
@@ -55,3 +58,16 @@ class LightGBMFamily:
             else 0
             for name in feature_names
         ]
+
+    def save_model(self, model: BaseEstimator, path: Path) -> None:
+        if not isinstance(model, LGBMRegressor):
+            raise TypeError(f"expected LGBMRegressor, got {type(model).__name__}")
+        model.booster_.save_model(str(path.with_suffix(".lgbm")))
+
+    def load_model(self, path: Path) -> LGBMRegressor:
+        booster = lgb.Booster(model_file=str(path.with_suffix(".lgbm")))
+        model = LGBMRegressor()
+        model._Booster = booster
+        model.fitted_ = True
+        model._n_features = booster.num_feature()
+        return model

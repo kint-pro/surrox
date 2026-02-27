@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import numpy as np
-from numpy.typing import NDArray
 from pydantic import BaseModel, ConfigDict
 from sklearn.base import BaseEstimator
+
+from surrox.types import NumpyArray
 
 
 class FoldMetrics(BaseModel):
@@ -43,9 +43,9 @@ class EnsembleMember(BaseModel):
 
 
 class SurrogatePrediction(BaseModel):
-    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
+    model_config = ConfigDict(frozen=True)
 
-    mean: NDArray[np.floating]
-    std: NDArray[np.floating]
-    lower: NDArray[np.floating]
-    upper: NDArray[np.floating]
+    mean: NumpyArray
+    std: NumpyArray
+    lower: NumpyArray
+    upper: NumpyArray

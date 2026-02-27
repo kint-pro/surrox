@@ -1,0 +1,4 @@
+# file: /Users/jozef/Code/surrox/src/surrox/surrogate/manager.py
+# hypothesis_version: 6.151.9
+
+['X_calib', 'columns', 'conformal', 'cv_rmse', 'default_coverage', 'estimator_family', 'feature_names', 'lightgbm', 'members', 'metadata.json', 'models', 'problem', 'trial_history', 'trial_number', 'weight', 'xgboost', 'y_calib']

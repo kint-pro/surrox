@@ -6,6 +6,7 @@ from surrox.analysis import AnalysisConfig, AnalysisResult, Analyzer, analyze
 from surrox.analysis.scenario import ScenarioComparisonResult, compare_scenarios
 from surrox.exceptions import SurroxError
 from surrox.optimizer import OptimizationResult, OptimizerConfig, optimize
+from surrox.persistence import load_result, save_result
 from surrox.problem import ProblemDefinition
 from surrox.problem.dataset import BoundDataset
 from surrox.problem.scenarios import Scenario
@@ -35,6 +36,8 @@ __all__ = [
     "Scenario",
     "ScenarioComparisonResult",
     "SurroxError",
+    "save_result",
+    "load_result",
 ]
 
 

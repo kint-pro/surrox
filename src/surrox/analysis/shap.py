@@ -1,5 +1,6 @@
-from numpy.typing import NDArray
 from pydantic import BaseModel, ConfigDict
+
+from surrox.types import NumpyArray
 
 
 class FeatureImportanceResult(BaseModel):
@@ -11,21 +12,21 @@ class FeatureImportanceResult(BaseModel):
 
 
 class ShapGlobalResult(BaseModel):
-    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
+    model_config = ConfigDict(frozen=True)
 
     column: str
     feature_names: tuple[str, ...]
-    shap_values: NDArray
+    shap_values: NumpyArray
     base_value: float
-    feature_values: NDArray
+    feature_values: NumpyArray
 
 
 class ShapLocalResult(BaseModel):
-    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
+    model_config = ConfigDict(frozen=True)
 
     column: str
     feature_names: tuple[str, ...]
-    shap_values: NDArray
+    shap_values: NumpyArray
     base_value: float
     feature_values: dict[str, float]
     predicted_value: float

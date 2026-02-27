@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
@@ -30,3 +31,7 @@ class EstimatorFamily(Protocol):
         feature_names: list[str],
         categorical_features: set[str],
     ) -> Any: ...
+
+    def save_model(self, model: BaseEstimator, path: Path) -> None: ...
+
+    def load_model(self, path: Path) -> BaseEstimator: ...
