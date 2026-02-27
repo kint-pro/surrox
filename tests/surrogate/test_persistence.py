@@ -69,6 +69,23 @@ class TestSurrogateManagerPersistence:
         assert (save_dir / "conformal" / "cost.npz").exists()
         assert (save_dir / "conformal" / "emissions.npz").exists()
 
+    def test_metadata_contains_versions_and_fingerprint(
+        self, trained_manager: SurrogateManager, tmp_path: pytest.TempPathFactory,
+    ) -> None:
+        import json
+
+        save_dir = tmp_path / "surrogates"  # type: ignore[operator]
+        trained_manager.save(save_dir)
+
+        metadata = json.loads((save_dir / "metadata.json").read_text())
+        assert "versions" in metadata
+        assert "surrox" in metadata["versions"]
+        assert "xgboost" in metadata["versions"]
+        assert "lightgbm" in metadata["versions"]
+        assert "dataset_fingerprint" in metadata
+        assert len(metadata["dataset_fingerprint"]) == 64
+        assert "training_config" in metadata
+
     def test_load_reconstructs_manager(
         self, trained_manager: SurrogateManager, tmp_path: pytest.TempPathFactory,
     ) -> None:
@@ -77,6 +94,12 @@ class TestSurrogateManagerPersistence:
         loaded = SurrogateManager.load(save_dir)
 
         assert loaded.problem == trained_manager.problem
+        assert loaded.config.n_trials == trained_manager.config.n_trials
+        assert loaded.config.cv_folds == trained_manager.config.cv_folds
+        assert loaded.config.ensemble_size == trained_manager.config.ensemble_size
+        assert loaded.config.random_seed == trained_manager.config.random_seed
+        assert loaded.config.min_r2 == trained_manager.config.min_r2
+        assert loaded.dataset_fingerprint == trained_manager.dataset_fingerprint
         assert set(loaded._surrogates.keys()) == set(trained_manager._surrogates.keys())
 
     def test_loaded_predictions_match_original(

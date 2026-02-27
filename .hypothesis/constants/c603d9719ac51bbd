@@ -1,0 +1,4 @@
+# file: /Users/jozef/Code/surrox/src/surrox/surrogate/manager.py
+# hypothesis_version: 6.151.9
+
+['column', 'columns', 'conformal', 'conformity_scores', 'cv_rmse', 'default_coverage', 'ensemble_size', 'estimator_family', 'feature_names', 'lightgbm', 'members', 'metadata.json', 'models', 'n_columns', 'n_families', 'n_trials', 'path', 'problem', 'saving surrogates', 'surrogates loaded', 'surrogates saved', 'trial_history', 'trial_number', 'weight', 'xgboost']

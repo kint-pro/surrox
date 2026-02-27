@@ -2,53 +2,62 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from mapie.regression import SplitConformalRegressor
+import numpy as np
 
 from surrox.exceptions import ConfigurationError
 
 if TYPE_CHECKING:
-    import numpy as np
     import pandas as pd
     from numpy.typing import NDArray
 
-    from surrox.surrogate.ensemble import EnsembleAdapter
+    from surrox.surrogate.ensemble import Ensemble
 
 
 class ConformalCalibration:
     def __init__(
         self,
         column: str,
-        adapter: EnsembleAdapter,
-        X_calib: NDArray[np.floating],
-        y_calib: NDArray[np.floating],
+        ensemble: Ensemble,
+        conformity_scores: NDArray[np.floating],
         default_coverage: float,
     ) -> None:
         self.column = column
-        self.adapter = adapter
-        self.X_calib = X_calib
-        self.y_calib = y_calib
+        self.ensemble = ensemble
+        self.conformity_scores = conformity_scores
         self._default_coverage = default_coverage
-        self._default_scr = self._build_scr(default_coverage)
+
+    @classmethod
+    def from_calibration_data(
+        cls,
+        column: str,
+        ensemble: Ensemble,
+        X_calib: NDArray[np.floating],
+        y_calib: NDArray[np.floating],
+        default_coverage: float,
+    ) -> ConformalCalibration:
+        import pandas as pd
+
+        X_df = pd.DataFrame(X_calib, columns=list(ensemble.feature_names))
+        predictions = ensemble.predict(X_df)
+        conformity_scores = np.abs(y_calib - predictions)
+        return cls(
+            column=column,
+            ensemble=ensemble,
+            conformity_scores=conformity_scores,
+            default_coverage=default_coverage,
+        )
 
     def prediction_interval(
-        self, X: pd.DataFrame, coverage: float
+        self, X: pd.DataFrame, coverage: float,
     ) -> tuple[NDArray[np.floating], NDArray[np.floating], NDArray[np.floating]]:
         if not (0 < coverage < 1):
             raise ConfigurationError("coverage must be between 0 and 1 exclusive")
 
-        if coverage == self._default_coverage:
-            scr = self._default_scr
-        else:
-            scr = self._build_scr(coverage)
-        X_features = X[list(self.adapter.ensemble.feature_names)]
-        y_pred, y_intervals = scr.predict_interval(X_features)
-        return y_pred, y_intervals[:, 0, 0], y_intervals[:, 1, 0]
+        n = len(self.conformity_scores)
+        quantile_level = min(coverage * (1 + 1 / n), 1.0)
+        q = float(np.quantile(self.conformity_scores, quantile_level))
 
-    def _build_scr(self, coverage: float) -> SplitConformalRegressor:
-        scr = SplitConformalRegressor(
-            estimator=self.adapter,
-            confidence_level=coverage,
-            prefit=True,
+        predictions = self.ensemble.predict(
+            X[list(self.ensemble.feature_names)],  # type: ignore[arg-type]
         )
-        scr.conformalize(self.X_calib, self.y_calib)
-        return scr
+        return predictions, predictions - q, predictions + q

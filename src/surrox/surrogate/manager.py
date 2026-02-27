@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import logging
 from pathlib import Path
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict
 
+from surrox._logging import log_duration
 from surrox.exceptions import SurroxError
 from surrox.surrogate.conformal import ConformalCalibration
-from surrox.surrogate.ensemble import Ensemble, EnsembleAdapter
+from surrox.surrogate.ensemble import Ensemble
 from surrox.surrogate.families import LightGBMFamily, XGBoostFamily
 from surrox.surrogate.models import EnsembleMember, SurrogatePrediction, TrialRecord
 from surrox.surrogate.protocol import EstimatorFamily
@@ -24,10 +28,12 @@ if TYPE_CHECKING:
     from surrox.surrogate.config import TrainingConfig
 
 
-_FAMILY_REGISTRY: dict[str, type[EstimatorFamily]] = {
+_logger = logging.getLogger(__name__)
+
+_FAMILY_REGISTRY: MappingProxyType[str, type[EstimatorFamily]] = MappingProxyType({
     "xgboost": XGBoostFamily,  # type: ignore[type-abstract]
     "lightgbm": LightGBMFamily,  # type: ignore[type-abstract]
-}
+})
 
 
 class SurrogateResult(BaseModel):
@@ -45,10 +51,12 @@ class SurrogateManager:
         problem: ProblemDefinition,
         config: TrainingConfig,
         surrogates: dict[str, SurrogateResult],
+        dataset_fingerprint: str,
     ) -> None:
         self._problem = problem
         self._config = config
         self._surrogates = surrogates
+        self._dataset_fingerprint = dataset_fingerprint
 
     @classmethod
     def train(
@@ -59,16 +67,49 @@ class SurrogateManager:
     ) -> SurrogateManager:
         from surrox.surrogate.pipeline import train_surrogate
 
+        columns = problem.surrogate_columns
+        _logger.info(
+            "surrogate training started",
+            extra={
+                "n_columns": len(columns),
+                "columns": list(columns),
+                "n_trials": config.n_trials,
+                "n_families": len(config.estimator_families),
+            },
+        )
+
         surrogates: dict[str, SurrogateResult] = {}
-        for column in problem.surrogate_columns:
-            surrogates[column] = train_surrogate(
-                problem=problem,
-                dataset_df=dataset.dataframe,
-                config=config,
+        for column in columns:
+            with log_duration(
+                _logger, "surrogate column training",
                 column=column,
+            ):
+                surrogates[column] = train_surrogate(
+                    problem=problem,
+                    dataset_df=dataset.dataframe,
+                    config=config,
+                    column=column,
+                )
+            ensemble = surrogates[column].ensemble
+            _logger.info(
+                "surrogate column complete",
+                extra={
+                    "column": column,
+                    "ensemble_size": len(ensemble.members),
+                },
             )
 
-        return cls(problem=problem, config=config, surrogates=surrogates)
+        _logger.info(
+            "surrogate training complete",
+            extra={"n_columns": len(columns)},
+        )
+        fingerprint = _compute_dataset_fingerprint(dataset.dataframe)
+        return cls(
+            problem=problem,
+            config=config,
+            surrogates=surrogates,
+            dataset_fingerprint=fingerprint,
+        )
 
     @property
     def problem(self) -> ProblemDefinition:
@@ -109,14 +150,28 @@ class SurrogateManager:
         return self._surrogates[column]
 
     def save(self, path: Path) -> None:
+        _logger.info(
+            "saving surrogates",
+            extra={"path": str(path), "n_columns": len(self._surrogates)},
+        )
         path.mkdir(parents=True, exist_ok=True)
         models_dir = path / "models"
         models_dir.mkdir(exist_ok=True)
         conformal_dir = path / "conformal"
         conformal_dir.mkdir(exist_ok=True)
 
+        config_dict = json.loads(self._config.model_dump_json(
+            exclude={"estimator_families"},
+        ))
+        config_dict["estimator_family_names"] = [
+            f.name for f in self._config.estimator_families
+        ]
+
         metadata: dict[str, Any] = {
             "problem": json.loads(self._problem.model_dump_json()),
+            "training_config": config_dict,
+            "versions": _collect_versions(),
+            "dataset_fingerprint": self._dataset_fingerprint,
             "columns": {},
         }
 
@@ -139,8 +194,7 @@ class SurrogateManager:
             conformal = surrogate.conformal
             np.savez(
                 conformal_dir / f"{column}.npz",
-                X_calib=conformal.X_calib,
-                y_calib=conformal.y_calib,
+                conformity_scores=conformal.conformity_scores,
             )
 
             trial_history = [
@@ -158,6 +212,7 @@ class SurrogateManager:
             }
 
         (path / "metadata.json").write_text(json.dumps(metadata, indent=2))
+        _logger.info("surrogates saved", extra={"path": str(path)})
 
     @classmethod
     def load(cls, path: Path) -> SurrogateManager:
@@ -171,7 +226,23 @@ class SurrogateManager:
 
         metadata = json.loads(metadata_path.read_text())
         problem = ProblemDefinition.model_validate(metadata["problem"])
-        config = TrainingConfig()
+
+        config_data = metadata.get("training_config", {})
+        family_names = config_data.pop(
+            "estimator_family_names", list(_FAMILY_REGISTRY.keys()),
+        )
+        unknown = [n for n in family_names if n not in _FAMILY_REGISTRY]
+        if unknown:
+            raise SurroxError(
+                f"unknown estimator families in saved model: {unknown}"
+            )
+        families = tuple(
+            _FAMILY_REGISTRY[name]() for name in family_names
+        )
+        config = TrainingConfig(
+            estimator_families=families,
+            **{k: v for k, v in config_data.items() if k != "estimator_family_names"},
+        )
 
         family_instances: dict[str, EstimatorFamily] = {
             name: cls_() for name, cls_ in _FAMILY_REGISTRY.items()
@@ -210,12 +281,10 @@ class SurrogateManager:
             )
 
             calib_data = np.load(conformal_dir / f"{column}.npz")
-            adapter = EnsembleAdapter(ensemble=ensemble)
             conformal = ConformalCalibration(
                 column=column,
-                adapter=adapter,
-                X_calib=calib_data["X_calib"],
-                y_calib=calib_data["y_calib"],
+                ensemble=ensemble,
+                conformity_scores=calib_data["conformity_scores"],
                 default_coverage=col_meta["default_coverage"],
             )
 
@@ -230,9 +299,72 @@ class SurrogateManager:
                 trial_history=trial_history,
             )
 
-        return cls(problem=problem, config=config, surrogates=surrogates)
+        saved_versions = metadata.get("versions", {})
+        current_versions = _collect_versions()
+        _warn_version_mismatches(saved_versions, current_versions)
+
+        dataset_fingerprint = metadata.get("dataset_fingerprint")
+        if dataset_fingerprint is None:
+            raise SurroxError("dataset_fingerprint missing in metadata.json")
+
+        _logger.info(
+            "surrogates loaded",
+            extra={"path": str(path), "n_columns": len(surrogates)},
+        )
+        return cls(
+            problem=problem,
+            config=config,
+            surrogates=surrogates,
+            dataset_fingerprint=dataset_fingerprint,
+        )
+
+    @property
+    def dataset_fingerprint(self) -> str:
+        return self._dataset_fingerprint
 
     def _resolve_families(self) -> dict[str, EstimatorFamily]:
         return {
             family.name: family for family in self._config.estimator_families
         }
+
+
+def _compute_dataset_fingerprint(df: pd.DataFrame) -> str:
+    import pandas as pd_mod
+
+    hash_values = pd_mod.util.hash_pandas_object(df, index=False)
+    combined = hashlib.sha256(hash_values.values.tobytes()).hexdigest()
+    return combined
+
+
+def _collect_versions() -> dict[str, str]:
+    import importlib.metadata
+    from contextlib import suppress
+
+    packages = {
+        "surrox": "surrox",
+        "numpy": "numpy",
+        "scikit-learn": "scikit-learn",
+        "xgboost": "xgboost",
+        "lightgbm": "lightgbm",
+    }
+    versions: dict[str, str] = {}
+    for key, dist_name in packages.items():
+        with suppress(importlib.metadata.PackageNotFoundError):
+            versions[key] = importlib.metadata.version(dist_name)
+    return versions
+
+
+def _warn_version_mismatches(
+    saved: dict[str, str], current: dict[str, str],
+) -> None:
+    for pkg, saved_ver in saved.items():
+        current_ver = current.get(pkg)
+        if current_ver and current_ver != saved_ver:
+            _logger.warning(
+                "version mismatch",
+                extra={
+                    "package": pkg,
+                    "saved_version": saved_ver,
+                    "current_version": current_ver,
+                },
+            )

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -16,6 +17,8 @@ from surrox.analysis.trade_off import TradeOffResult
 from surrox.analysis.what_if import WhatIfPrediction, WhatIfResult
 from surrox.exceptions import AnalysisError
 from surrox.optimizer.extrapolation import ExtrapolationGate
+
+_logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -80,7 +83,7 @@ class Analyzer:
         df = self._bound_dataset.dataframe
         n = min(len(df), self._config.shap_background_size)
         if n < len(df):
-            return df.sample(n=n, random_state=42)
+            return df.sample(n=n, random_state=self._config.random_seed)
         return df
 
     def shap_global(self, column: str) -> ShapGlobalResult:
@@ -94,6 +97,7 @@ class Analyzer:
         return result
 
     def _compute_shap_global(self, column: str) -> ShapGlobalResult:
+        _logger.debug("computing shap_global", extra={"column": column})
         ensemble = self._surrogate_manager.get_ensemble(column)
         background = self._get_background_data()
         feature_names = ensemble.feature_names
@@ -136,6 +140,10 @@ class Analyzer:
     def _compute_shap_local(self, column: str, point_index: int) -> ShapLocalResult:
         import pandas as pd
 
+        _logger.debug(
+            "computing shap_local",
+            extra={"column": column, "point_index": point_index},
+        )
         ensemble = self._surrogate_manager.get_ensemble(column)
         feature_names = ensemble.feature_names
         point = self._opt_result.feasible_points[point_index]
@@ -199,6 +207,10 @@ class Analyzer:
         return result
 
     def _compute_pdp_ice(self, variable_name: str, column: str) -> PDPICEResult:
+        _logger.debug(
+            "computing pdp_ice",
+            extra={"variable": variable_name, "column": column},
+        )
         from sklearn.inspection import partial_dependence
 
         ensemble = self._surrogate_manager.get_ensemble(column)
@@ -248,6 +260,7 @@ class Analyzer:
         return result
 
     def _compute_trade_off(self) -> TradeOffResult:
+        _logger.debug("computing trade_off")
         objectives = self._problem.objectives
         if len(objectives) < 2:
             raise AnalysisError("trade-off analysis requires at least 2 objectives")
@@ -293,6 +306,7 @@ class Analyzer:
         return self._compute_what_if(variable_values)
 
     def _compute_what_if(self, variable_values: dict[str, Any]) -> WhatIfResult:
+        _logger.debug("computing what_if", extra={"variables": variable_values})
         import pandas as pd
 
         recommended = self._get_recommended()

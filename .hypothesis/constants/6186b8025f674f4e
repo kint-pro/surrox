@@ -1,0 +1,4 @@
+# file: /Users/jozef/Code/surrox/src/surrox/_logging.py
+# hypothesis_version: 6.151.9
+
+['%s complete', '%s started', 'duration_s']

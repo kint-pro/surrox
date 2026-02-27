@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -10,6 +11,8 @@ from surrox.analysis.types import ConstraintStatusKind
 from surrox.optimizer.result import ConstraintEvaluation
 from surrox.problem.types import ConstraintOperator, Direction, MonotonicDirection
 from surrox.problem.variables import ContinuousBounds, IntegerBounds
+
+_logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from surrox.analysis.config import AnalysisConfig
@@ -96,7 +99,7 @@ def compute_summary(
     problem = optimization_result.problem
     recommended = _get_recommended_solution(optimization_result)
 
-    return Summary(
+    summary = Summary(
         solution_summary=_compute_solution_summary(optimization_result),
         baseline_comparison=_compute_baseline_comparison(
             optimization_result, bound_dataset, recommended
@@ -108,6 +111,16 @@ def compute_summary(
             optimization_result, surrogate_manager, config, recommended
         ),
     )
+    _logger.info(
+        "summary complete",
+        extra={
+            "n_objectives": len(problem.objectives),
+            "n_constraints": len(problem.data_constraints),
+            "n_extrapolation_warnings": len(summary.extrapolation_warnings),
+            "n_monotonicity_violations": len(summary.monotonicity_violations),
+        },
+    )
+    return summary
 
 
 def _get_recommended_solution(
@@ -247,26 +260,15 @@ def _compute_surrogate_quality(
         best_cv_rmse = min(t.mean_rmse for t in trial_history)
 
         conformal = sr.conformal
-        calib_df = pd.DataFrame(
-            conformal.X_calib,
-            columns=list(ensemble.feature_names),
-        )
-        y_pred, lower, upper = conformal.prediction_interval(
-            calib_df, conformal._default_coverage
-        )
-        y_true = conformal.y_calib
-        covered = np.sum((y_true >= lower) & (y_true <= upper))
-        coverage = float(covered / len(y_true))
+        coverage = conformal._default_coverage
 
         warning: str | None = None
-        if best_cv_rmse > 0:
-            target_values = conformal.y_calib
-            target_range = float(np.ptp(target_values))
-            if target_range > 0 and best_cv_rmse / target_range > 0.2:
-                warning = (
-                    f"cv_rmse ({best_cv_rmse:.4f}) is >20% of target range "
-                    f"({target_range:.4f})"
-                )
+        median_score = float(np.median(conformal.conformity_scores))
+        if median_score > 0 and best_cv_rmse > 2 * median_score:
+            warning = (
+                f"cv_rmse ({best_cv_rmse:.4f}) significantly exceeds "
+                f"median conformity score ({median_score:.4f})"
+            )
 
         qualities.append(
             SurrogateQuality(

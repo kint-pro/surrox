@@ -1,9 +1,8 @@
 import numpy as np
 import pandas as pd
-import pytest
 from sklearn.base import BaseEstimator
 
-from surrox.surrogate.ensemble import Ensemble, EnsembleAdapter
+from surrox.surrogate.ensemble import Ensemble
 from surrox.surrogate.models import EnsembleMember
 
 
@@ -55,30 +54,3 @@ class TestEnsemble:
         mean, std = ensemble.predict_with_std(X)
         np.testing.assert_allclose(mean, [10.0])
         np.testing.assert_allclose(std, [0.0])
-
-
-class TestEnsembleAdapter:
-    def test_predict_delegates_to_ensemble(self) -> None:
-        ensemble = _make_ensemble([5.0], [1.0])
-        adapter = EnsembleAdapter(ensemble)
-        X = pd.DataFrame({"x1": [1.0], "x2": [2.0]})
-        result = adapter.predict(X)
-        np.testing.assert_allclose(result, [5.0])
-
-    def test_predict_with_numpy_array(self) -> None:
-        ensemble = _make_ensemble([5.0], [1.0])
-        adapter = EnsembleAdapter(ensemble)
-        X = np.array([[1.0, 2.0]])
-        result = adapter.predict(X)
-        np.testing.assert_allclose(result, [5.0])
-
-    def test_fit_returns_self(self) -> None:
-        ensemble = _make_ensemble([5.0], [1.0])
-        adapter = EnsembleAdapter(ensemble)
-        result = adapter.fit(None, None)
-        assert result is adapter
-
-    def test_is_fitted(self) -> None:
-        ensemble = _make_ensemble([5.0], [1.0])
-        adapter = EnsembleAdapter(ensemble)
-        assert adapter.__sklearn_is_fitted__() is True

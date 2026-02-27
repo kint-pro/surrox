@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 from numpy.typing import NDArray
 from pymoo.optimize import minimize
 
+from surrox._logging import log_duration
 from surrox.optimizer.algorithm import select_algorithm
 from surrox.optimizer.config import OptimizerConfig
 from surrox.optimizer.extrapolation import ExtrapolationGate
@@ -22,6 +25,8 @@ from surrox.problem.definition import ProblemDefinition
 from surrox.problem.scenarios import Scenario
 from surrox.problem.types import ConstraintSeverity, Direction
 from surrox.surrogate.manager import SurrogateManager
+
+_logger = logging.getLogger(__name__)
 
 
 def optimize(
@@ -55,15 +60,30 @@ def optimize(
     algorithm = select_algorithm(problem, config)
     pymoo_problem.clear_diagnostics()
 
-    result = minimize(
-        pymoo_problem,
-        algorithm,
-        ("n_gen", config.n_generations),
-        seed=config.seed,
-        verbose=False,
-    )
+    with log_duration(
+        _logger, "optimization",
+        algorithm=type(algorithm).__name__,
+        population_size=config.population_size,
+        n_generations=config.n_generations,
+    ):
+        result = minimize(
+            pymoo_problem,
+            algorithm,
+            ("n_gen", config.n_generations),
+            seed=config.seed,
+            verbose=False,
+        )
 
-    return _build_result(pymoo_problem, result, problem, config)
+    opt_result = _build_result(pymoo_problem, result, problem, config)
+    _logger.info(
+        "optimization result",
+        extra={
+            "n_feasible": len(opt_result.feasible_points),
+            "n_infeasible": len(opt_result.infeasible_points),
+            "hypervolume": opt_result.hypervolume,
+        },
+    )
+    return opt_result
 
 
 def _build_result(

@@ -69,5 +69,7 @@ class LightGBMFamily:
         model = LGBMRegressor()
         model._Booster = booster
         model.fitted_ = True
-        model._n_features = booster.num_feature()
+        n_features = booster.num_feature()
+        model._n_features = n_features
+        model.n_features_in_ = n_features
         return model

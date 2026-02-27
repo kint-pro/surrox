@@ -5,7 +5,7 @@ from sklearn.linear_model import LinearRegression
 
 from surrox.exceptions import ConfigurationError
 from surrox.surrogate.conformal import ConformalCalibration
-from surrox.surrogate.ensemble import Ensemble, EnsembleAdapter
+from surrox.surrogate.ensemble import Ensemble
 from surrox.surrogate.models import EnsembleMember
 
 
@@ -30,9 +30,8 @@ def _make_conformal() -> ConformalCalibration:
         feature_names=("f1", "f2", "f3"),
         monotonic_constraints={},
     )
-    adapter = EnsembleAdapter(ensemble)
-    return ConformalCalibration(
-        column="target", adapter=adapter,
+    return ConformalCalibration.from_calibration_data(
+        column="target", ensemble=ensemble,
         X_calib=X_calib, y_calib=y_calib,
         default_coverage=0.9,
     )
@@ -70,3 +69,10 @@ class TestConformalCalibration:
             conformal.prediction_interval(X, coverage=0.0)
         with pytest.raises(ConfigurationError, match="coverage"):
             conformal.prediction_interval(X, coverage=1.0)
+
+    def test_no_raw_data_stored(self) -> None:
+        conformal = _make_conformal()
+        assert not hasattr(conformal, "X_calib")
+        assert not hasattr(conformal, "y_calib")
+        assert hasattr(conformal, "conformity_scores")
+        assert conformal.conformity_scores.ndim == 1

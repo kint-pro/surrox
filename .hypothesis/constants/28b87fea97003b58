@@ -1,0 +1,4 @@
+# file: /Users/jozef/Code/surrox/src/surrox/surrogate/pipeline.py
+# hypothesis_version: 6.151.9
+
+[1.0, 100, 1000, 'best_cv_rmse', 'column', 'completed', 'conformal calibrated', 'coverage', 'ensemble built', 'ensemble_size', 'estimator_family', 'family', 'mean_r2', 'mean_rmse', 'min_r2', 'minimize', 'n_calib_samples', 'optuna', 'pruned', 'quality gate failed', 'r2', 'trial complete', 'trial_number']

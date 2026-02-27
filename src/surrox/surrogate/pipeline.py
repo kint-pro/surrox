@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 from math import ceil
 from typing import TYPE_CHECKING, Any
@@ -12,8 +13,10 @@ from sklearn.model_selection import KFold, train_test_split
 from surrox.exceptions import SurrogateTrainingError
 from surrox.problem.types import DType, MonotonicDirection
 from surrox.surrogate.conformal import ConformalCalibration
-from surrox.surrogate.ensemble import Ensemble, EnsembleAdapter
+from surrox.surrogate.ensemble import Ensemble
 from surrox.surrogate.models import EnsembleMember, FoldMetrics, TrialRecord
+
+_logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -136,9 +139,21 @@ def train_surrogate(
             trial.number, family_name, hyperparameters, fold_metrics_list, "completed"
         )
         trial_records.append(record)
+        _logger.debug(
+            "trial complete",
+            extra={
+                "column": column,
+                "trial_number": trial.number,
+                "family": family_name,
+                "mean_r2": round(record.mean_r2, 4),
+                "mean_rmse": round(record.mean_rmse, 4),
+            },
+        )
         return record.mean_rmse
 
-    optuna.logging.set_verbosity(optuna.logging.WARNING)
+    optuna_logger = logging.getLogger("optuna")
+    original_level = optuna_logger.level
+    optuna_logger.setLevel(logging.WARNING)
     sampler = optuna.samplers.TPESampler(
         seed=config.random_seed,
         multivariate=True,
@@ -153,11 +168,14 @@ def train_surrogate(
         sampler=sampler,
         pruner=pruner,
     )
-    study.optimize(
-        objective,
-        n_trials=config.n_trials,
-        timeout=config.study_timeout_s,
-    )
+    try:
+        study.optimize(
+            objective,
+            n_trials=config.n_trials,
+            timeout=config.study_timeout_s,
+        )
+    finally:
+        optuna_logger.setLevel(original_level)
 
     completed_records = [r for r in trial_records if r.status == "completed"]
     if not completed_records:
@@ -180,15 +198,33 @@ def train_surrogate(
         y_train=y_train_np,
     )
 
+    _logger.info(
+        "ensemble built",
+        extra={
+            "column": column,
+            "ensemble_size": len(ensemble.members),
+            "best_cv_rmse": round(
+                min(r.mean_rmse for r in completed_records), 4
+            ),
+        },
+    )
+
     _validate_quality_gate(ensemble, X_calib_np, y_calib_np, column, config)
 
-    adapter = EnsembleAdapter(ensemble)
-    conformal = ConformalCalibration(
+    conformal = ConformalCalibration.from_calibration_data(
         column=column,
-        adapter=adapter,
+        ensemble=ensemble,
         X_calib=X_calib_np,
         y_calib=y_calib_np,
         default_coverage=config.default_coverage,
+    )
+    _logger.info(
+        "conformal calibrated",
+        extra={
+            "column": column,
+            "coverage": config.default_coverage,
+            "n_calib_samples": len(X_calib_np),
+        },
     )
 
     from surrox.surrogate.manager import SurrogateResult
@@ -229,6 +265,14 @@ def _validate_quality_gate(
     predictions = ensemble.predict(X_calib_df)
     r2 = r2_score(y_calib, predictions)
     if r2 < config.min_r2:
+        _logger.warning(
+            "quality gate failed",
+            extra={
+                "column": column,
+                "r2": round(float(r2), 4),
+                "min_r2": config.min_r2,
+            },
+        )
         raise SurrogateTrainingError(
             f"surrogate '{column}': ensemble R² on calibration set is {r2:.4f}, "
             f"below minimum threshold {config.min_r2} — surrogate quality insufficient"

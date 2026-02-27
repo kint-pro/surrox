@@ -10,6 +10,7 @@ class AnalysisConfig(BaseModel):
     pdp_grid_resolution: int = 50
     pdp_percentiles: tuple[float, float] = (0.05, 0.95)
     monotonicity_check_resolution: int = 50
+    random_seed: int = 42
 
     @model_validator(mode="after")
     def _validate_config(self) -> "AnalysisConfig":
