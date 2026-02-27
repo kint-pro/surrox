@@ -1,4 +1,0 @@
-# file: /Users/jozef/Code/surrox/src/surrox/optimizer/__init__.py
-# hypothesis_version: 6.151.9
-
-['ConstraintEvaluation', 'EvaluatedPoint', 'OptimizationResult', 'OptimizerConfig', 'optimize']

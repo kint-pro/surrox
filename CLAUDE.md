@@ -11,6 +11,8 @@ uv run pytest tests/problem/test_definition.py::TestProblemDefinitionValidation:
 uv run ruff check src/               # lint
 uv run ruff format --check src/      # format check
 uv run ruff format src/              # auto-format
+uv run zensical build                # build docs
+uv run zensical serve                # serve docs locally
 ```
 
 Python 3.13 is pinned (LightGBM compatibility ceiling). Use `uv sync` to install dependencies.

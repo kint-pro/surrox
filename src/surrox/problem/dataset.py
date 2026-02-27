@@ -69,6 +69,16 @@ def _validate_numeric_dtype(df: pd.DataFrame, variable: Variable) -> None:
 
 
 class BoundDataset(BaseModel):
+    """A DataFrame validated against a ProblemDefinition.
+
+    Validates at construction that all required columns exist, contain no
+    missing values, and satisfy dtype and bounds constraints.
+
+    Attributes:
+        problem: The problem definition to validate against.
+        dataframe: Historical data. Columns must match variable names and target columns.
+    """
+
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
     problem: ProblemDefinition

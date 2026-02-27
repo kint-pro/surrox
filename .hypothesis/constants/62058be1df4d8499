@@ -1,4 +1,0 @@
-# file: /Users/jozef/Code/surrox/src/surrox/analysis/analyzer.py
-# hypothesis_version: 6.151.9
-
-[0.0, 1e-12, 2.0, '__len__', 'average', 'both', 'brute', 'grid_values', 'ignore', 'individual', 'pdp_ice', 'shap_global', 'shap_local', 'trade_off']

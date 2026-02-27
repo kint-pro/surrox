@@ -14,6 +14,15 @@ if TYPE_CHECKING:
 
 
 class VariableRobustness(BaseModel):
+    """Robustness assessment for a single decision variable across scenarios.
+
+    Attributes:
+        variable_name: Name of the decision variable.
+        values_per_scenario: Recommended value per scenario.
+        is_robust: Whether the variable is stable across scenarios (spread < 5% of bounds range).
+        spread: Absolute range of values across scenarios (0.0 for categorical agreement).
+    """
+
     model_config = ConfigDict(frozen=True)
 
     variable_name: str
@@ -23,6 +32,13 @@ class VariableRobustness(BaseModel):
 
 
 class ScenarioComparisonResult(BaseModel):
+    """Cross-scenario comparison of recommended decision variable settings.
+
+    Attributes:
+        scenario_names: Names of the compared scenarios.
+        variable_robustness: Robustness assessment per decision variable.
+    """
+
     model_config = ConfigDict(frozen=True)
 
     scenario_names: tuple[str, ...]

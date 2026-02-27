@@ -1,4 +1,0 @@
-# file: /Users/jozef/Code/surrox/src/surrox/optimizer/runner.py
-# hypothesis_version: 6.151.9
-
-[0.0, 'hypervolume', 'n_feasible', 'n_gen', 'n_infeasible', 'optimization', 'optimization result']

@@ -6,6 +6,17 @@ from surrox.exceptions import ProblemDefinitionError
 
 
 class Scenario(BaseModel):
+    """A named set of fixed context variable values for scenario-based optimization.
+
+    Scenarios fix context variables to specific values, enabling what-if comparisons
+    across different operating conditions.
+
+    Attributes:
+        name: Unique name for this scenario.
+        context_values: Mapping of context variable names to their fixed values.
+            Must contain at least one entry.
+    """
+
     model_config = ConfigDict(frozen=True)
 
     name: str

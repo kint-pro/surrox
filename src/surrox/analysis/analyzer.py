@@ -48,6 +48,13 @@ def _explain_tree(model: Any, X: NDArray[np.floating[Any]]) -> _ShapExplanation:
 
 
 class Analyzer:
+    """On-demand detail analysis engine with lazy computation and caching.
+
+    Provides SHAP explanations (global and local), feature importance,
+    PDP/ICE curves, trade-off analysis, and what-if predictions.
+    Results are cached after first computation.
+    """
+
     def __init__(
         self,
         optimization_result: OptimizationResult,

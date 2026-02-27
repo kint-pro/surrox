@@ -4,6 +4,17 @@ from surrox.exceptions import ConfigurationError
 
 
 class OptimizerConfig(BaseModel):
+    """Configuration for the pymoo-based optimizer.
+
+    Attributes:
+        population_size: Population size for the evolutionary algorithm.
+        n_generations: Number of generations to evolve.
+        seed: Random seed for reproducibility.
+        extrapolation_k: Number of nearest neighbors for extrapolation detection.
+        extrapolation_threshold: Distance threshold beyond which a point is flagged as extrapolating.
+        constraint_confidence: Conformal prediction confidence level for constraint evaluation.
+    """
+
     model_config = ConfigDict(frozen=True)
 
     population_size: int = 100

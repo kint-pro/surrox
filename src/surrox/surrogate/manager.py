@@ -46,6 +46,12 @@ class SurrogateResult(BaseModel):
 
 
 class SurrogateManager:
+    """Manages trained surrogate ensembles for all target columns.
+
+    Provides prediction, uncertainty quantification, and persistence.
+    Created via the `train` class method or loaded from disk via `load`.
+    """
+
     def __init__(
         self,
         problem: ProblemDefinition,

@@ -12,6 +12,23 @@ def _default_families() -> tuple[EstimatorFamily, ...]:
 
 
 class TrainingConfig(BaseModel):
+    """Configuration for surrogate model training.
+
+    Attributes:
+        n_trials: Number of Optuna HPO trials per surrogate.
+        cv_folds: Number of cross-validation folds.
+        calibration_fraction: Fraction of data held out for conformal calibration.
+        ensemble_size: Maximum number of models in the ensemble.
+        diversity_threshold: Maximum correlation allowed between ensemble members.
+        softmax_temperature: Temperature for softmax ensemble weight selection.
+        default_coverage: Default conformal prediction interval coverage (0–1).
+        estimator_families: Estimator families to search over (XGBoost, LightGBM).
+        n_threads: Thread limit per model. None uses all available cores.
+        study_timeout_s: Optuna study timeout in seconds.
+        min_r2: Minimum R² threshold for model quality. None disables the check.
+        random_seed: Random seed for reproducibility.
+    """
+
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
     n_trials: int = 50

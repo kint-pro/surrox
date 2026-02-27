@@ -1,4 +1,0 @@
-# file: /Users/jozef/Code/surrox/src/surrox/surrogate/manager.py
-# hypothesis_version: 6.151.9
-
-['column', 'columns', 'conformal', 'conformity_scores', 'current_version', 'cv_rmse', 'dataset_fingerprint', 'default_coverage', 'ensemble_size', 'estimator_families', 'estimator_family', 'feature_names', 'lightgbm', 'members', 'metadata.json', 'models', 'n_columns', 'n_families', 'n_trials', 'numpy', 'package', 'path', 'problem', 'saved_version', 'saving surrogates', 'scikit-learn', 'surrogates loaded', 'surrogates saved', 'surrox', 'training_config', 'trial_history', 'trial_number', 'unknown', 'version mismatch', 'versions', 'weight', 'xgboost']

@@ -32,11 +32,9 @@ _logger = logging.getLogger(__name__)
 def optimize(
     bound_dataset: BoundDataset,
     surrogate_manager: SurrogateManager,
-    config: OptimizerConfig | None = None,
+    config: OptimizerConfig = OptimizerConfig(),
     scenario: Scenario | None = None,
 ) -> OptimizationResult:
-    if config is None:
-        config = OptimizerConfig()
     problem = bound_dataset.problem
 
     gate = ExtrapolationGate(

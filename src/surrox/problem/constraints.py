@@ -5,6 +5,20 @@ from surrox.problem.types import ConstraintOperator, ConstraintSeverity
 
 
 class LinearConstraint(BaseModel):
+    """An analytical linear constraint on decision variables.
+
+    Enforces `sum(coeff_i * x_i) operator rhs` where coefficients map
+    decision variable names to their weights.
+
+    Attributes:
+        name: Unique name for this constraint.
+        coefficients: Mapping of decision variable names to their coefficients. Must be non-empty with no zero values.
+        operator: Comparison operator (le, ge, eq).
+        rhs: Right-hand side value.
+        severity: Hard constraints must be satisfied; soft constraints are penalized.
+        penalty_weight: Required (and positive) for soft constraints, must be None for hard.
+    """
+
     model_config = ConfigDict(frozen=True)
 
     name: str
@@ -43,6 +57,21 @@ class LinearConstraint(BaseModel):
 
 
 class DataConstraint(BaseModel):
+    """A surrogate-based constraint evaluated on a predicted dataset column.
+
+    Enforces `prediction(column) operator limit`. A surrogate model is trained
+    for the target column, and the constraint is evaluated on its predictions.
+
+    Attributes:
+        name: Unique name for this constraint.
+        column: Dataset column that the surrogate predicts.
+        operator: Comparison operator (le, ge, eq).
+        limit: Threshold value.
+        tolerance: Required (and positive) for eq operator, must be None otherwise.
+        severity: Hard constraints must be satisfied; soft constraints are penalized.
+        penalty_weight: Required (and positive) for soft constraints, must be None for hard.
+    """
+
     model_config = ConfigDict(frozen=True)
 
     name: str

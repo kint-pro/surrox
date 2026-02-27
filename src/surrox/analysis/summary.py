@@ -27,6 +27,16 @@ _EPSILON = 1e-8
 
 
 class SolutionSummary(BaseModel):
+    """High-level overview of the optimization outcome.
+
+    Attributes:
+        n_feasible: Number of feasible Pareto-optimal points.
+        n_infeasible: Number of infeasible points.
+        best_objectives: Best value found per objective across feasible points.
+        compromise_objectives: Objective values at the compromise point (multi-objective only).
+        hypervolume: Hypervolume indicator of the Pareto front (multi-objective only).
+    """
+
     model_config = ConfigDict(frozen=True)
 
     n_feasible: int
@@ -37,6 +47,14 @@ class SolutionSummary(BaseModel):
 
 
 class BaselineComparison(BaseModel):
+    """Comparison of the recommended solution against historical data.
+
+    Attributes:
+        recommended_objectives: Predicted objectives at the recommended point.
+        historical_best_per_objective: Best historical value per objective from the training data.
+        improvement: Improvement over historical best (positive = better).
+    """
+
     model_config = ConfigDict(frozen=True)
 
     recommended_objectives: dict[str, float]
@@ -45,6 +63,14 @@ class BaselineComparison(BaseModel):
 
 
 class ConstraintStatus(BaseModel):
+    """Status of a constraint at the recommended point.
+
+    Attributes:
+        evaluation: Raw constraint evaluation with violation and prediction.
+        status: Classification as satisfied, active, or violated.
+        margin: Distance to the constraint boundary (positive = satisfied).
+    """
+
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
     evaluation: ConstraintEvaluation
@@ -53,6 +79,16 @@ class ConstraintStatus(BaseModel):
 
 
 class SurrogateQuality(BaseModel):
+    """Quality metrics for a trained surrogate ensemble.
+
+    Attributes:
+        column: Target column name.
+        cv_rmse: Best cross-validation RMSE from the Optuna study.
+        conformal_coverage: Conformal prediction interval coverage level.
+        ensemble_size: Number of models in the ensemble.
+        warning: Quality warning if CV RMSE significantly exceeds conformity scores.
+    """
+
     model_config = ConfigDict(frozen=True)
 
     column: str
@@ -63,6 +99,13 @@ class SurrogateQuality(BaseModel):
 
 
 class ExtrapolationWarning(BaseModel):
+    """Warning for a feasible point that lies outside the training data domain.
+
+    Attributes:
+        point_index: Index into the feasible points list.
+        distance: k-NN distance to the training data manifold.
+    """
+
     model_config = ConfigDict(frozen=True)
 
     point_index: int
@@ -70,6 +113,16 @@ class ExtrapolationWarning(BaseModel):
 
 
 class MonotonicityViolation(BaseModel):
+    """Detected violation of a declared monotonic relationship.
+
+    Attributes:
+        decision_variable: Variable involved in the violation.
+        target: Objective or constraint target.
+        declared_direction: Expected monotonic direction.
+        violation_fraction: Fraction of grid intervals where monotonicity is violated.
+        max_reversal: Maximum absolute reversal magnitude.
+    """
+
     model_config = ConfigDict(frozen=True)
 
     decision_variable: str
@@ -80,6 +133,17 @@ class MonotonicityViolation(BaseModel):
 
 
 class Summary(BaseModel):
+    """Automatic post-optimization summary.
+
+    Attributes:
+        solution_summary: Overview of feasible/infeasible solutions and best objectives.
+        baseline_comparison: Improvement vs. historical best (None if no feasible solutions).
+        constraint_status: Status of each constraint at the recommended point.
+        surrogate_quality: Quality metrics per trained surrogate.
+        extrapolation_warnings: Feasible points flagged as extrapolating.
+        monotonicity_violations: Detected violations of declared monotonic relations.
+    """
+
     model_config = ConfigDict(frozen=True)
 
     solution_summary: SolutionSummary

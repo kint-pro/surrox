@@ -1,4 +1,0 @@
-# file: /Users/jozef/Code/surrox/src/surrox/problem/constraints.py
-# hypothesis_version: 6.151.9
-
-[0.0, 'DataConstraint', 'LinearConstraint', 'after']

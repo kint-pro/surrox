@@ -35,6 +35,14 @@ MarginalRates = Annotated[
 
 
 class TradeOffResult(BaseModel):
+    """Trade-off analysis between objective pairs on the Pareto front.
+
+    Attributes:
+        objective_pairs: All pairwise combinations of objectives.
+        marginal_rates: Marginal rates of substitution per objective pair, each an array of rates between adjacent Pareto points.
+        pareto_objectives: Objective values on the Pareto front, shape (n_points, n_objectives), sorted by first objective.
+    """
+
     model_config = ConfigDict(frozen=True)
 
     objective_pairs: tuple[tuple[str, str], ...]

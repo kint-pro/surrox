@@ -10,8 +10,25 @@ from surrox.exceptions import SurroxError
 from surrox.optimizer import OptimizationResult, OptimizerConfig, optimize
 from surrox.persistence import load_result, save_result
 from surrox.problem import ProblemDefinition
+from surrox.problem.constraints import DataConstraint, LinearConstraint
 from surrox.problem.dataset import BoundDataset
+from surrox.problem.domain_knowledge import MonotonicRelation
+from surrox.problem.objectives import Objective
 from surrox.problem.scenarios import Scenario
+from surrox.problem.types import (
+    ConstraintOperator,
+    Direction,
+    DType,
+    MonotonicDirection,
+    Role,
+)
+from surrox.problem.variables import (
+    CategoricalBounds,
+    ContinuousBounds,
+    IntegerBounds,
+    OrdinalBounds,
+    Variable,
+)
 from surrox.result import ScenariosResult, SurroxResult
 from surrox.surrogate import SurrogateManager, TrainingConfig
 
@@ -26,18 +43,32 @@ __all__ = [
     "__version__",
     "run",
     "run_scenarios",
+    "ProblemDefinition",
+    "Variable",
+    "ContinuousBounds",
+    "IntegerBounds",
+    "CategoricalBounds",
+    "OrdinalBounds",
+    "Objective",
+    "DataConstraint",
+    "LinearConstraint",
+    "MonotonicRelation",
+    "Scenario",
+    "DType",
+    "Role",
+    "Direction",
+    "ConstraintOperator",
+    "MonotonicDirection",
+    "BoundDataset",
     "SurroxResult",
     "ScenariosResult",
-    "ProblemDefinition",
-    "BoundDataset",
-    "Analyzer",
-    "AnalysisConfig",
-    "AnalysisResult",
-    "OptimizerConfig",
-    "OptimizationResult",
     "TrainingConfig",
     "SurrogateManager",
-    "Scenario",
+    "OptimizerConfig",
+    "OptimizationResult",
+    "AnalysisConfig",
+    "AnalysisResult",
+    "Analyzer",
     "ScenarioComparisonResult",
     "SurroxError",
     "save_result",
@@ -52,11 +83,25 @@ def __dir__() -> list[str]:
 def run(
     problem: ProblemDefinition,
     dataframe: pd.DataFrame,
-    surrogate_config: TrainingConfig | None = None,
-    optimizer_config: OptimizerConfig | None = None,
-    analysis_config: AnalysisConfig | None = None,
+    surrogate_config: TrainingConfig = TrainingConfig(),
+    optimizer_config: OptimizerConfig = OptimizerConfig(),
+    analysis_config: AnalysisConfig = AnalysisConfig(),
     scenario: Scenario | None = None,
 ) -> tuple[SurroxResult, Analyzer]:
+    """Run the full surrox pipeline: train surrogates, optimize, and analyze.
+
+    Args:
+        problem: Declarative problem definition with variables, objectives, and constraints.
+        dataframe: Historical data matching the problem definition.
+        surrogate_config: Surrogate training configuration.
+        optimizer_config: Optimizer configuration.
+        analysis_config: Analysis configuration.
+        scenario: Optional scenario fixing context variables to specific values.
+
+    Returns:
+        A tuple of the optimization and analysis result, and an analyzer for
+        on-demand detail analyses (SHAP, PDP/ICE, What-If).
+    """
     with log_duration(
         _logger, "surrox.run",
         n_variables=len(problem.variables),
@@ -69,7 +114,7 @@ def run(
         surrogate_manager = SurrogateManager.train(
             problem=problem,
             dataset=bound_dataset,
-            config=surrogate_config or TrainingConfig(),
+            config=surrogate_config,
         )
 
         optimization_result = optimize(
@@ -98,10 +143,30 @@ def run_scenarios(
     problem: ProblemDefinition,
     dataframe: pd.DataFrame,
     scenarios: dict[str, Scenario],
-    surrogate_config: TrainingConfig | None = None,
-    optimizer_config: OptimizerConfig | None = None,
-    analysis_config: AnalysisConfig | None = None,
+    surrogate_config: TrainingConfig = TrainingConfig(),
+    optimizer_config: OptimizerConfig = OptimizerConfig(),
+    analysis_config: AnalysisConfig = AnalysisConfig(),
 ) -> tuple[ScenariosResult, dict[str, Analyzer]]:
+    """Run the full surrox pipeline for multiple scenarios and compare results.
+
+    Trains surrogates once, then optimizes and analyzes each scenario independently.
+    Produces a cross-scenario comparison alongside per-scenario results.
+
+    Args:
+        problem: Declarative problem definition with variables, objectives, and constraints.
+        dataframe: Historical data matching the problem definition.
+        scenarios: Named scenarios mapping to Scenario objects. Must contain at least 2.
+        surrogate_config: Surrogate training configuration.
+        optimizer_config: Optimizer configuration.
+        analysis_config: Analysis configuration.
+
+    Returns:
+        A tuple of the scenarios result (per-scenario results + comparison),
+        and a dict mapping scenario names to their analyzers.
+
+    Raises:
+        SurroxError: If fewer than 2 scenarios are provided.
+    """
     if len(scenarios) < 2:
         raise SurroxError("run_scenarios requires at least 2 scenarios")
 
@@ -115,7 +180,7 @@ def run_scenarios(
         surrogate_manager = SurrogateManager.train(
             problem=problem,
             dataset=bound_dataset,
-            config=surrogate_config or TrainingConfig(),
+            config=surrogate_config,
         )
 
         per_scenario: dict[str, SurroxResult] = {}

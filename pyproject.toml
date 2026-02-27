@@ -64,3 +64,7 @@ dev = [
     "bandit>=1.7",
     "hypothesis>=6.100",
 ]
+docs = [
+    "zensical>=0.0.24",
+    "mkdocstrings[python]>=1.0",
+]

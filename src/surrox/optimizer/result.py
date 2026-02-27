@@ -10,6 +10,17 @@ from surrox.problem.types import ConstraintSeverity
 
 
 class ConstraintEvaluation(BaseModel):
+    """Evaluation of a single constraint at a candidate point.
+
+    Attributes:
+        name: Name of the constraint.
+        violation: Constraint violation magnitude (0.0 if satisfied).
+        prediction: Predicted value from the surrogate.
+        severity: Hard or soft constraint.
+        lower_bound: Lower conformal prediction bound (data constraints only).
+        upper_bound: Upper conformal prediction bound (data constraints only).
+    """
+
     model_config = ConfigDict(frozen=True)
 
     name: str
@@ -21,6 +32,17 @@ class ConstraintEvaluation(BaseModel):
 
 
 class EvaluatedPoint(BaseModel):
+    """A single evaluated candidate from the optimization.
+
+    Attributes:
+        variables: Decision and context variable values.
+        objectives: Predicted objective values by name.
+        constraints: Constraint evaluations with violation info.
+        feasible: Whether all hard constraints are satisfied.
+        extrapolation_distance: Distance to the training data manifold.
+        is_extrapolating: Whether this point is outside the training domain.
+    """
+
     model_config = ConfigDict(frozen=True)
 
     variables: dict[str, Any]
@@ -75,6 +97,19 @@ def _compute_hypervolume(
 
 
 class OptimizationResult(BaseModel):
+    """Result of the optimization process.
+
+    Attributes:
+        feasible_points: Pareto-optimal points satisfying all hard constraints.
+        infeasible_points: Points that violated at least one hard constraint.
+        has_feasible_solutions: Whether any feasible solutions were found.
+        compromise_index: Index into feasible_points of the recommended compromise solution (multi-objective only).
+        hypervolume: Hypervolume indicator of the Pareto front (multi-objective only).
+        problem: The problem definition used for optimization.
+        n_generations: Number of generations executed.
+        n_evaluations: Total number of candidate evaluations.
+    """
+
     model_config = ConfigDict(frozen=True)
 
     feasible_points: tuple[EvaluatedPoint, ...]

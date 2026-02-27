@@ -1,4 +1,0 @@
-# file: /Users/jozef/Code/surrox/src/surrox/surrogate/families/lightgbm.py
-# hypothesis_version: 6.151.9
-
-[1e-08, 0.01, 0.3, 0.5, 1.0, 10.0, 127, 500, 'colsample_bytree', 'learning_rate', 'lightgbm', 'min_child_samples', 'n_estimators', 'num_leaves', 'reg_alpha', 'reg_lambda', 'subsample']

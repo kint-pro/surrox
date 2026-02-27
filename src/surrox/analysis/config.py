@@ -4,6 +4,16 @@ from surrox.exceptions import AnalysisError
 
 
 class AnalysisConfig(BaseModel):
+    """Configuration for post-optimization analysis.
+
+    Attributes:
+        shap_background_size: Number of background samples for SHAP explanations.
+        pdp_grid_resolution: Number of grid points for PDP/ICE plots.
+        pdp_percentiles: Lower and upper percentile bounds for PDP grid range.
+        monotonicity_check_resolution: Grid resolution for monotonicity verification.
+        random_seed: Random seed for reproducibility.
+    """
+
     model_config = ConfigDict(frozen=True)
 
     shap_background_size: int = 100

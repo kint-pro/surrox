@@ -34,9 +34,8 @@ def analyze(
     optimization_result: OptimizationResult,
     surrogate_manager: SurrogateManager,
     bound_dataset: BoundDataset,
-    config: AnalysisConfig | None = None,
+    config: AnalysisConfig = AnalysisConfig(),
 ) -> tuple[AnalysisResult, Analyzer]:
-    config = config or AnalysisConfig()
     summary = compute_summary(
         optimization_result, surrogate_manager, bound_dataset, config
     )

@@ -10,6 +10,20 @@ from surrox.problem.variables import Variable
 
 
 class ProblemDefinition(BaseModel):
+    """Immutable, declarative definition of an optimization problem.
+
+    Central object consumed by all layers of the surrox pipeline. Validated
+    exhaustively at construction time, including cross-field consistency checks.
+
+    Attributes:
+        variables: Variables with their types, roles, and bounds.
+        objectives: Optimization objectives (at least one required).
+        linear_constraints: Analytical linear constraints on decision variables.
+        data_constraints: Surrogate-based constraints on predicted columns.
+        monotonic_relations: Known monotonic relationships for surrogate training.
+        scenarios: Named context variable assignments for scenario comparison.
+    """
+
     model_config = ConfigDict(frozen=True)
 
     variables: tuple[Variable, ...]
