@@ -91,3 +91,6 @@ class SurrogateManager:
 
     def get_trial_history(self, column: str) -> tuple[TrialRecord, ...]:
         return self._surrogates[column].trial_history
+
+    def get_surrogate_result(self, column: str) -> SurrogateResult:
+        return self._surrogates[column]
