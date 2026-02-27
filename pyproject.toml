@@ -36,6 +36,9 @@ packages = ["src/surrox"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 strict = true
+markers = [
+    "slow: end-to-end integration tests with real model training",
+]
 
 [tool.ruff]
 target-version = "py313"
