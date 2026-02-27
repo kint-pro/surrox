@@ -26,34 +26,34 @@ def _has_categorical(problem: ProblemDefinition) -> bool:
 
 
 def _has_integer(problem: ProblemDefinition) -> bool:
-    return any(
-        v.dtype == DType.INTEGER for v in problem.decision_variables
-    )
+    return any(v.dtype == DType.INTEGER for v in problem.decision_variables)
 
 
 def _integer_operators() -> dict[str, object]:
     return {
         "sampling": IntegerRandomSampling(),
         "crossover": SBX(
-            prob=1.0, eta=3.0, vtype=float, repair=RoundingRepair()  # pyright: ignore[reportArgumentType]
+            prob=1.0,
+            eta=3.0,
+            vtype=float,
+            repair=RoundingRepair(),  # pyright: ignore[reportArgumentType]
         ),
         "mutation": PM(
-            prob=1.0, eta=3.0, vtype=float, repair=RoundingRepair()  # pyright: ignore[reportArgumentType]
+            prob=1.0,
+            eta=3.0,
+            vtype=float,
+            repair=RoundingRepair(),  # pyright: ignore[reportArgumentType]
         ),
     }
 
 
 def _compute_ref_dirs(n_obj: int) -> tuple[object, int]:
     n_partitions = max(4, 16 - 2 * n_obj)
-    ref_dirs = get_reference_directions(
-        "das-dennis", n_obj, n_partitions=n_partitions
-    )
+    ref_dirs = get_reference_directions("das-dennis", n_obj, n_partitions=n_partitions)
     return ref_dirs, len(ref_dirs)
 
 
-def select_algorithm(
-    problem: ProblemDefinition, config: OptimizerConfig
-) -> Algorithm:
+def select_algorithm(problem: ProblemDefinition, config: OptimizerConfig) -> Algorithm:
     n_obj = len(problem.objectives)
     has_cat = _has_categorical(problem)
     has_int = _has_integer(problem)
@@ -83,9 +83,7 @@ def select_algorithm(
     return NSGA3(pop_size=effective_pop, ref_dirs=ref_dirs)
 
 
-def _select_mixed_variable(
-    n_obj: int, pop_size: int
-) -> Algorithm:
+def _select_mixed_variable(n_obj: int, pop_size: int) -> Algorithm:
     if n_obj == 1:
         return MixedVariableGA(pop_size=pop_size)
 

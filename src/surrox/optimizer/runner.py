@@ -20,7 +20,7 @@ from surrox.optimizer.result import (
 from surrox.problem.dataset import BoundDataset
 from surrox.problem.definition import ProblemDefinition
 from surrox.problem.scenarios import Scenario
-from surrox.problem.types import Direction
+from surrox.problem.types import ConstraintSeverity, Direction
 from surrox.surrogate.manager import SurrogateManager
 
 
@@ -127,7 +127,13 @@ def _build_result(
         else:
             infeasible.append(point)
 
-    infeasible.sort(key=lambda p: sum(max(0.0, ce.violation) for ce in p.constraints))
+    infeasible.sort(
+        key=lambda p: sum(
+            max(0.0, ce.violation)
+            for ce in p.constraints
+            if ce.severity == ConstraintSeverity.HARD
+        )
+    )
 
     feasible_tuple = tuple(feasible)
     infeasible_tuple = tuple(infeasible)

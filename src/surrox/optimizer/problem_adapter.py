@@ -15,7 +15,12 @@ from surrox.optimizer.result import ConstraintEvaluation
 from surrox.problem.constraints import LinearConstraint
 from surrox.problem.definition import ProblemDefinition
 from surrox.problem.scenarios import Scenario
-from surrox.problem.types import ConstraintOperator, Direction, DType
+from surrox.problem.types import (
+    ConstraintOperator,
+    ConstraintSeverity,
+    Direction,
+    DType,
+)
 from surrox.surrogate.manager import SurrogateManager
 
 _DEFAULT_PENALTY_MULTIPLIER = 100.0
@@ -63,8 +68,8 @@ def _build_pymoo_variables(
 
 
 def _count_constraints(problem: ProblemDefinition) -> int:
-    n = len(problem.linear_constraints)
-    for dc in problem.data_constraints:
+    n = len(problem.hard_linear_constraints)
+    for dc in problem.hard_data_constraints:
         n += 2 if dc.operator == ConstraintOperator.EQ else 1
     return n
 
@@ -139,7 +144,7 @@ class SurroxProblem(ElementwiseProblem):
         df = pd.DataFrame([row])
 
         objectives = self._evaluate_objectives(df)
-        constraint_evals, G = self._evaluate_constraints(df)
+        constraint_evals, G, soft_penalty = self._evaluate_constraints(df)
 
         extrap_mask, extrap_distances = self._gate.evaluate(df)
         is_extrapolating = bool(extrap_mask[0])
@@ -147,6 +152,7 @@ class SurroxProblem(ElementwiseProblem):
 
         if is_extrapolating:
             objectives = objectives + self._extrapolation_penalty
+        objectives = objectives + soft_penalty
 
         out["F"] = objectives
         if len(G) > 0:
@@ -172,9 +178,10 @@ class SurroxProblem(ElementwiseProblem):
 
     def _evaluate_constraints(
         self, df: pd.DataFrame
-    ) -> tuple[list[ConstraintEvaluation], NDArray[np.float64]]:
+    ) -> tuple[list[ConstraintEvaluation], NDArray[np.float64], float]:
         evals: list[ConstraintEvaluation] = []
         g_values: list[float] = []
+        soft_penalty = 0.0
 
         if self._problem.data_constraints:
             uncertainty = self._surrogate.evaluate_with_uncertainty(
@@ -189,44 +196,45 @@ class SurroxProblem(ElementwiseProblem):
 
                 if dc.operator == ConstraintOperator.LE:
                     violation = upper - dc.limit
-                    evals.append(
-                        ConstraintEvaluation(
-                            name=dc.name,
-                            violation=violation,
-                            prediction=point_pred,
-                            lower_bound=lower,
-                            upper_bound=upper,
-                        )
-                    )
-                    g_values.append(violation)
                 elif dc.operator == ConstraintOperator.GE:
                     violation = dc.limit - lower
-                    evals.append(
-                        ConstraintEvaluation(
-                            name=dc.name,
-                            violation=violation,
-                            prediction=point_pred,
-                            lower_bound=lower,
-                            upper_bound=upper,
-                        )
-                    )
-                    g_values.append(violation)
                 elif dc.operator == ConstraintOperator.EQ:
                     assert dc.tolerance is not None
                     v1 = lower - (dc.limit + dc.tolerance)
                     v2 = (dc.limit - dc.tolerance) - upper
                     violation = max(v1, v2)
-                    evals.append(
-                        ConstraintEvaluation(
-                            name=dc.name,
-                            violation=violation,
-                            prediction=point_pred,
-                            lower_bound=lower,
-                            upper_bound=upper,
-                        )
+                else:
+                    raise OptimizationError(f"unknown operator: {dc.operator}")
+
+                evals.append(
+                    ConstraintEvaluation(
+                        name=dc.name,
+                        violation=violation,
+                        prediction=point_pred,
+                        severity=dc.severity,
+                        lower_bound=lower,
+                        upper_bound=upper,
                     )
-                    g_values.append(v1)
-                    g_values.append(v2)
+                )
+
+                if dc.severity == ConstraintSeverity.HARD:
+                    if dc.operator == ConstraintOperator.EQ:
+                        assert dc.tolerance is not None
+                        g_values.append(lower - (dc.limit + dc.tolerance))
+                        g_values.append((dc.limit - dc.tolerance) - upper)
+                    else:
+                        g_values.append(violation)
+                else:
+                    assert dc.penalty_weight is not None
+                    if dc.operator == ConstraintOperator.EQ:
+                        assert dc.tolerance is not None
+                        v1 = lower - (dc.limit + dc.tolerance)
+                        v2 = (dc.limit - dc.tolerance) - upper
+                        soft_penalty += dc.penalty_weight * (
+                            max(0.0, v1) + max(0.0, v2)
+                        )
+                    else:
+                        soft_penalty += dc.penalty_weight * max(0.0, violation)
 
         for lc in self._problem.linear_constraints:
             row = df.iloc[0]
@@ -240,11 +248,17 @@ class SurroxProblem(ElementwiseProblem):
                     name=lc.name,
                     violation=violation,
                     prediction=lhs,
+                    severity=lc.severity,
                 )
             )
-            g_values.append(violation)
 
-        return evals, np.array(g_values, dtype=np.float64)
+            if lc.severity == ConstraintSeverity.HARD:
+                g_values.append(violation)
+            else:
+                assert lc.penalty_weight is not None
+                soft_penalty += lc.penalty_weight * max(0.0, violation)
+
+        return evals, np.array(g_values, dtype=np.float64), soft_penalty
 
 
 def _linear_constraint_violation(lc: LinearConstraint, lhs: float) -> float:

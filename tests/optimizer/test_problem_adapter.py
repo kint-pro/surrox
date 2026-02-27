@@ -14,7 +14,7 @@ from surrox.problem.constraints import DataConstraint, LinearConstraint
 from surrox.problem.definition import ProblemDefinition
 from surrox.problem.objectives import Objective
 from surrox.problem.scenarios import Scenario
-from surrox.problem.types import ConstraintOperator, Direction, DType, Role
+from surrox.problem.types import ConstraintOperator, ConstraintSeverity, Direction, DType, Role
 from surrox.problem.variables import (
     CategoricalBounds,
     ContinuousBounds,
@@ -188,3 +188,163 @@ class TestSurroxProblemEvaluation:
         sp._evaluate({"x": 5.0}, out)
 
         assert out["G"][0] == 105.0 - 100.0
+
+    def test_soft_constraint_no_g_value(self) -> None:
+        problem = ProblemDefinition(
+            variables=(
+                Variable(name="x", dtype=DType.CONTINUOUS, role=Role.DECISION,
+                         bounds=ContinuousBounds(lower=0.0, upper=10.0)),
+            ),
+            objectives=(
+                Objective(name="obj", direction=Direction.MINIMIZE, column="y"),
+            ),
+            data_constraints=(
+                DataConstraint(
+                    name="dc", column="y", operator=ConstraintOperator.LE,
+                    limit=100.0, severity=ConstraintSeverity.SOFT, penalty_weight=10.0,
+                ),
+            ),
+        )
+
+        surrogate = MagicMock()
+        surrogate.evaluate.return_value = {"y": np.array([90.0])}
+        surrogate.evaluate_with_uncertainty.return_value = {
+            "y": SurrogatePrediction(
+                mean=np.array([90.0]),
+                std=np.array([5.0]),
+                lower=np.array([80.0]),
+                upper=np.array([105.0]),
+            )
+        }
+
+        training = pd.DataFrame({"x": np.linspace(0, 10, 50)})
+        gate = ExtrapolationGate(
+            training, problem.decision_variables, k=3, threshold=100.0,
+        )
+
+        sp = SurroxProblem(problem, surrogate, gate, OptimizerConfig(), 1e6)
+        out: dict = {}
+        sp._evaluate({"x": 5.0}, out)
+
+        assert "G" not in out
+        assert out["F"][0] == 90.0 + 10.0 * (105.0 - 100.0)
+
+    def test_soft_constraint_no_violation_no_penalty(self) -> None:
+        problem = ProblemDefinition(
+            variables=(
+                Variable(name="x", dtype=DType.CONTINUOUS, role=Role.DECISION,
+                         bounds=ContinuousBounds(lower=0.0, upper=10.0)),
+            ),
+            objectives=(
+                Objective(name="obj", direction=Direction.MINIMIZE, column="y"),
+            ),
+            data_constraints=(
+                DataConstraint(
+                    name="dc", column="y", operator=ConstraintOperator.LE,
+                    limit=100.0, severity=ConstraintSeverity.SOFT, penalty_weight=10.0,
+                ),
+            ),
+        )
+
+        surrogate = MagicMock()
+        surrogate.evaluate.return_value = {"y": np.array([50.0])}
+        surrogate.evaluate_with_uncertainty.return_value = {
+            "y": SurrogatePrediction(
+                mean=np.array([50.0]),
+                std=np.array([5.0]),
+                lower=np.array([40.0]),
+                upper=np.array([60.0]),
+            )
+        }
+
+        training = pd.DataFrame({"x": np.linspace(0, 10, 50)})
+        gate = ExtrapolationGate(
+            training, problem.decision_variables, k=3, threshold=100.0,
+        )
+
+        sp = SurroxProblem(problem, surrogate, gate, OptimizerConfig(), 1e6)
+        out: dict = {}
+        sp._evaluate({"x": 5.0}, out)
+
+        assert "G" not in out
+        assert out["F"][0] == 50.0
+
+    def test_mixed_hard_soft_constraints(self) -> None:
+        problem = ProblemDefinition(
+            variables=(
+                Variable(name="x", dtype=DType.CONTINUOUS, role=Role.DECISION,
+                         bounds=ContinuousBounds(lower=0.0, upper=10.0)),
+            ),
+            objectives=(
+                Objective(name="obj", direction=Direction.MINIMIZE, column="y"),
+            ),
+            data_constraints=(
+                DataConstraint(
+                    name="hard_dc", column="y", operator=ConstraintOperator.LE,
+                    limit=100.0,
+                ),
+                DataConstraint(
+                    name="soft_dc", column="y", operator=ConstraintOperator.LE,
+                    limit=80.0, severity=ConstraintSeverity.SOFT, penalty_weight=5.0,
+                ),
+            ),
+        )
+
+        surrogate = MagicMock()
+        surrogate.evaluate.return_value = {"y": np.array([90.0])}
+        surrogate.evaluate_with_uncertainty.return_value = {
+            "y": SurrogatePrediction(
+                mean=np.array([90.0]),
+                std=np.array([5.0]),
+                lower=np.array([80.0]),
+                upper=np.array([105.0]),
+            )
+        }
+
+        training = pd.DataFrame({"x": np.linspace(0, 10, 50)})
+        gate = ExtrapolationGate(
+            training, problem.decision_variables, k=3, threshold=100.0,
+        )
+
+        sp = SurroxProblem(problem, surrogate, gate, OptimizerConfig(), 1e6)
+        out: dict = {}
+        sp._evaluate({"x": 5.0}, out)
+
+        assert len(out["G"]) == 1
+        assert out["G"][0] == 105.0 - 100.0
+        soft_violation = 105.0 - 80.0
+        assert out["F"][0] == 90.0 + 5.0 * soft_violation
+
+    def test_soft_linear_constraint_penalty(self) -> None:
+        problem = ProblemDefinition(
+            variables=(
+                Variable(name="x", dtype=DType.CONTINUOUS, role=Role.DECISION,
+                         bounds=ContinuousBounds(lower=0.0, upper=10.0)),
+            ),
+            objectives=(
+                Objective(name="obj", direction=Direction.MINIMIZE, column="y"),
+            ),
+            linear_constraints=(
+                LinearConstraint(
+                    name="soft_lc", coefficients={"x": 1.0},
+                    operator=ConstraintOperator.LE, rhs=5.0,
+                    severity=ConstraintSeverity.SOFT, penalty_weight=3.0,
+                ),
+            ),
+        )
+
+        surrogate = MagicMock()
+        surrogate.evaluate.return_value = {"y": np.array([42.0])}
+        surrogate.evaluate_with_uncertainty.return_value = {}
+
+        training = pd.DataFrame({"x": np.linspace(0, 10, 50)})
+        gate = ExtrapolationGate(
+            training, problem.decision_variables, k=3, threshold=100.0,
+        )
+
+        sp = SurroxProblem(problem, surrogate, gate, OptimizerConfig(), 1e6)
+        out: dict = {}
+        sp._evaluate({"x": 7.0}, out)
+
+        assert "G" not in out
+        assert out["F"][0] == 42.0 + 3.0 * 2.0

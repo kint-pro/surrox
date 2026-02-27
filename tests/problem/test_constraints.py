@@ -3,7 +3,7 @@ from pydantic import ValidationError
 
 from surrox.exceptions import ProblemDefinitionError
 from surrox.problem.constraints import DataConstraint, LinearConstraint
-from surrox.problem.types import ConstraintOperator
+from surrox.problem.types import ConstraintOperator, ConstraintSeverity
 
 
 class TestLinearConstraint:
@@ -91,12 +91,74 @@ class TestLinearConstraint:
         with pytest.raises(ValidationError):
             lc.rhs = 2.0  # type: ignore[misc]
 
+    def test_severity_defaults_to_hard(self) -> None:
+        lc = LinearConstraint(
+            name="c", coefficients={"x": 1.0},
+            operator=ConstraintOperator.LE, rhs=10.0,
+        )
+        assert lc.severity == ConstraintSeverity.HARD
+        assert lc.penalty_weight is None
+
+    def test_soft_requires_penalty_weight(self) -> None:
+        with pytest.raises(ProblemDefinitionError, match="penalty_weight is required"):
+            LinearConstraint(
+                name="c", coefficients={"x": 1.0},
+                operator=ConstraintOperator.LE, rhs=10.0,
+                severity=ConstraintSeverity.SOFT,
+            )
+
+    def test_hard_with_penalty_weight_raises(self) -> None:
+        with pytest.raises(ProblemDefinitionError, match="penalty_weight must be None"):
+            LinearConstraint(
+                name="c", coefficients={"x": 1.0},
+                operator=ConstraintOperator.LE, rhs=10.0,
+                severity=ConstraintSeverity.HARD, penalty_weight=1.0,
+            )
+
+    def test_soft_with_penalty_weight(self) -> None:
+        lc = LinearConstraint(
+            name="c", coefficients={"x": 1.0},
+            operator=ConstraintOperator.LE, rhs=10.0,
+            severity=ConstraintSeverity.SOFT, penalty_weight=2.0,
+        )
+        assert lc.severity == ConstraintSeverity.SOFT
+        assert lc.penalty_weight == 2.0
+
+    def test_negative_penalty_weight_raises(self) -> None:
+        with pytest.raises(ProblemDefinitionError, match="penalty_weight must be positive"):
+            LinearConstraint(
+                name="c", coefficients={"x": 1.0},
+                operator=ConstraintOperator.LE, rhs=10.0,
+                severity=ConstraintSeverity.SOFT, penalty_weight=-1.0,
+            )
+
+    def test_zero_penalty_weight_raises(self) -> None:
+        with pytest.raises(ProblemDefinitionError, match="penalty_weight must be positive"):
+            LinearConstraint(
+                name="c", coefficients={"x": 1.0},
+                operator=ConstraintOperator.LE, rhs=10.0,
+                severity=ConstraintSeverity.SOFT, penalty_weight=0.0,
+            )
+
     def test_serialization_round_trip(self) -> None:
         lc = LinearConstraint(
             name="budget",
             coefficients={"price": 2.0, "qty": 3.0},
             operator=ConstraintOperator.LE,
             rhs=500.0,
+        )
+        data = lc.model_dump()
+        reconstructed = LinearConstraint(**data)
+        assert reconstructed == lc
+
+    def test_serialization_round_trip_soft(self) -> None:
+        lc = LinearConstraint(
+            name="budget",
+            coefficients={"price": 2.0, "qty": 3.0},
+            operator=ConstraintOperator.LE,
+            rhs=500.0,
+            severity=ConstraintSeverity.SOFT,
+            penalty_weight=5.0,
         )
         data = lc.model_dump()
         reconstructed = LinearConstraint(**data)
@@ -238,6 +300,79 @@ class TestDataConstraint:
             operator=ConstraintOperator.EQ,
             limit=25.0,
             tolerance=0.5,
+        )
+        data = dc.model_dump()
+        reconstructed = DataConstraint(**data)
+        assert reconstructed == dc
+
+    def test_severity_defaults_to_hard(self) -> None:
+        dc = DataConstraint(
+            name="c", column="x",
+            operator=ConstraintOperator.LE, limit=100.0,
+        )
+        assert dc.severity == ConstraintSeverity.HARD
+        assert dc.penalty_weight is None
+
+    def test_soft_requires_penalty_weight(self) -> None:
+        with pytest.raises(ProblemDefinitionError, match="penalty_weight is required"):
+            DataConstraint(
+                name="c", column="x",
+                operator=ConstraintOperator.LE, limit=100.0,
+                severity=ConstraintSeverity.SOFT,
+            )
+
+    def test_hard_with_penalty_weight_raises(self) -> None:
+        with pytest.raises(ProblemDefinitionError, match="penalty_weight must be None"):
+            DataConstraint(
+                name="c", column="x",
+                operator=ConstraintOperator.LE, limit=100.0,
+                severity=ConstraintSeverity.HARD, penalty_weight=1.0,
+            )
+
+    def test_soft_with_penalty_weight(self) -> None:
+        dc = DataConstraint(
+            name="c", column="x",
+            operator=ConstraintOperator.LE, limit=100.0,
+            severity=ConstraintSeverity.SOFT, penalty_weight=10.0,
+        )
+        assert dc.severity == ConstraintSeverity.SOFT
+        assert dc.penalty_weight == 10.0
+
+    def test_negative_penalty_weight_raises(self) -> None:
+        with pytest.raises(ProblemDefinitionError, match="penalty_weight must be positive"):
+            DataConstraint(
+                name="c", column="x",
+                operator=ConstraintOperator.LE, limit=100.0,
+                severity=ConstraintSeverity.SOFT, penalty_weight=-1.0,
+            )
+
+    def test_zero_penalty_weight_raises(self) -> None:
+        with pytest.raises(ProblemDefinitionError, match="penalty_weight must be positive"):
+            DataConstraint(
+                name="c", column="x",
+                operator=ConstraintOperator.LE, limit=100.0,
+                severity=ConstraintSeverity.SOFT, penalty_weight=0.0,
+            )
+
+    def test_soft_eq_with_tolerance_and_weight(self) -> None:
+        dc = DataConstraint(
+            name="c", column="x",
+            operator=ConstraintOperator.EQ, limit=25.0,
+            tolerance=0.5,
+            severity=ConstraintSeverity.SOFT, penalty_weight=5.0,
+        )
+        assert dc.severity == ConstraintSeverity.SOFT
+        assert dc.tolerance == 0.5
+        assert dc.penalty_weight == 5.0
+
+    def test_serialization_round_trip_soft(self) -> None:
+        dc = DataConstraint(
+            name="cost_pref",
+            column="cost",
+            operator=ConstraintOperator.LE,
+            limit=50000.0,
+            severity=ConstraintSeverity.SOFT,
+            penalty_weight=10.0,
         )
         data = dc.model_dump()
         reconstructed = DataConstraint(**data)

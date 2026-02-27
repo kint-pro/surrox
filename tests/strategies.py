@@ -8,6 +8,7 @@ from surrox.problem.objectives import Objective
 from surrox.problem.scenarios import Scenario
 from surrox.problem.types import (
     ConstraintOperator,
+    ConstraintSeverity,
     Direction,
     DType,
     MonotonicDirection,
@@ -111,15 +112,31 @@ def objectives(draw: st.DrawFn) -> Objective:
 
 
 @st.composite
+def _severity_and_weight(
+    draw: st.DrawFn,
+) -> tuple[ConstraintSeverity, float | None]:
+    severity = draw(st.sampled_from(ConstraintSeverity))
+    if severity == ConstraintSeverity.SOFT:
+        weight = draw(
+            st.floats(min_value=1e-6, max_value=1e6, allow_nan=False, allow_infinity=False)
+        )
+        return severity, weight
+    return severity, None
+
+
+@st.composite
 def linear_constraints(draw: st.DrawFn) -> LinearConstraint:
     coefficients = draw(
         st.dictionaries(variable_names, safe_nonzero_floats, min_size=1, max_size=5)
     )
+    severity, penalty_weight = draw(_severity_and_weight())
     return LinearConstraint(
         name=draw(st.from_regex(r"lc_[a-z]{1,5}", fullmatch=True)),
         coefficients=coefficients,
         operator=draw(st.sampled_from(ConstraintOperator)),
         rhs=draw(safe_floats),
+        severity=severity,
+        penalty_weight=penalty_weight,
     )
 
 
@@ -131,12 +148,15 @@ def data_constraints(draw: st.DrawFn) -> DataConstraint:
         if operator == ConstraintOperator.EQ
         else None
     )
+    severity, penalty_weight = draw(_severity_and_weight())
     return DataConstraint(
         name=draw(st.from_regex(r"dc_[a-z]{1,5}", fullmatch=True)),
         column=draw(st.from_regex(r"col_[a-z]{1,5}", fullmatch=True)),
         operator=operator,
         limit=draw(safe_floats),
         tolerance=tolerance,
+        severity=severity,
+        penalty_weight=penalty_weight,
     )
 
 

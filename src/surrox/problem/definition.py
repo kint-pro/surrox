@@ -5,7 +5,7 @@ from surrox.problem.constraints import DataConstraint, LinearConstraint
 from surrox.problem.domain_knowledge import MonotonicRelation
 from surrox.problem.objectives import Objective
 from surrox.problem.scenarios import Scenario
-from surrox.problem.types import DType, MonotonicDirection, Role
+from surrox.problem.types import ConstraintSeverity, DType, MonotonicDirection, Role
 from surrox.problem.variables import Variable
 
 
@@ -164,6 +164,30 @@ class ProblemDefinition(BaseModel):
     @property
     def context_variables(self) -> tuple[Variable, ...]:
         return tuple(v for v in self.variables if v.role == Role.CONTEXT)
+
+    @property
+    def hard_linear_constraints(self) -> tuple[LinearConstraint, ...]:
+        return tuple(
+            c for c in self.linear_constraints if c.severity == ConstraintSeverity.HARD
+        )
+
+    @property
+    def soft_linear_constraints(self) -> tuple[LinearConstraint, ...]:
+        return tuple(
+            c for c in self.linear_constraints if c.severity == ConstraintSeverity.SOFT
+        )
+
+    @property
+    def hard_data_constraints(self) -> tuple[DataConstraint, ...]:
+        return tuple(
+            c for c in self.data_constraints if c.severity == ConstraintSeverity.HARD
+        )
+
+    @property
+    def soft_data_constraints(self) -> tuple[DataConstraint, ...]:
+        return tuple(
+            c for c in self.data_constraints if c.severity == ConstraintSeverity.SOFT
+        )
 
     @property
     def surrogate_columns(self) -> tuple[str, ...]:

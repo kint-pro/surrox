@@ -9,6 +9,7 @@ from surrox.problem.objectives import Objective
 from surrox.problem.scenarios import Scenario
 from surrox.problem.types import (
     ConstraintOperator,
+    ConstraintSeverity,
     Direction,
     DType,
     MonotonicDirection,
@@ -552,6 +553,49 @@ class TestProblemDefinitionProperties:
     ) -> None:
         constraints = minimal_problem.monotonic_constraints_for("cost")
         assert constraints == {}
+
+
+    def test_hard_linear_constraints(self) -> None:
+        hard = LinearConstraint(
+            name="hard_c", coefficients={"x": 1.0},
+            operator=ConstraintOperator.LE, rhs=10.0,
+        )
+        soft = LinearConstraint(
+            name="soft_c", coefficients={"x": 1.0},
+            operator=ConstraintOperator.LE, rhs=50.0,
+            severity=ConstraintSeverity.SOFT, penalty_weight=1.0,
+        )
+        problem = ProblemDefinition(
+            variables=(make_decision_var(),),
+            objectives=(make_objective("cost", "cost_col"),),
+            linear_constraints=(hard, soft),
+        )
+        assert problem.hard_linear_constraints == (hard,)
+        assert problem.soft_linear_constraints == (soft,)
+
+    def test_hard_data_constraints(self) -> None:
+        hard = DataConstraint(
+            name="hard_dc", column="pressure",
+            operator=ConstraintOperator.LE, limit=100.0,
+        )
+        soft = DataConstraint(
+            name="soft_dc", column="cost",
+            operator=ConstraintOperator.LE, limit=50000.0,
+            severity=ConstraintSeverity.SOFT, penalty_weight=10.0,
+        )
+        problem = ProblemDefinition(
+            variables=(make_decision_var(),),
+            objectives=(make_objective("obj", "y"),),
+            data_constraints=(hard, soft),
+        )
+        assert problem.hard_data_constraints == (hard,)
+        assert problem.soft_data_constraints == (soft,)
+
+    def test_no_soft_constraints_returns_empty(
+        self, minimal_problem: ProblemDefinition
+    ) -> None:
+        assert minimal_problem.soft_linear_constraints == ()
+        assert minimal_problem.soft_data_constraints == ()
 
 
 class TestProblemDefinitionImmutability:

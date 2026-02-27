@@ -6,6 +6,7 @@ import numpy as np
 from pydantic import BaseModel, ConfigDict
 
 from surrox.problem.definition import ProblemDefinition
+from surrox.problem.types import ConstraintSeverity
 
 
 class ConstraintEvaluation(BaseModel):
@@ -14,6 +15,7 @@ class ConstraintEvaluation(BaseModel):
     name: str
     violation: float
     prediction: float
+    severity: ConstraintSeverity = ConstraintSeverity.HARD
     lower_bound: float | None = None
     upper_bound: float | None = None
 

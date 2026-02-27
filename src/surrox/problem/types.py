@@ -27,3 +27,8 @@ class ConstraintOperator(StrEnum):
     LE = "le"
     GE = "ge"
     EQ = "eq"
+
+
+class ConstraintSeverity(StrEnum):
+    HARD = "hard"
+    SOFT = "soft"
