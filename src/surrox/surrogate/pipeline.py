@@ -6,6 +6,7 @@ from math import ceil
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+import pandas as pd
 import optuna
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import KFold, train_test_split
@@ -55,7 +56,6 @@ def train_surrogate(
         random_state=config.random_seed,
     )
 
-    X_train_np = X_train.to_numpy()
     y_train_np = y_train.to_numpy()
     X_calib_np = X_calib.to_numpy()
     y_calib_np = y_calib.to_numpy()
@@ -83,10 +83,10 @@ def train_surrogate(
         fold_metrics_list: list[FoldMetrics] = []
         oof = np.empty(len(y_train_np))
 
-        for fold_idx, (train_idx, val_idx) in enumerate(kf.split(X_train_np)):
-            X_fold_train = X_train_np[train_idx]
+        for fold_idx, (train_idx, val_idx) in enumerate(kf.split(X_train)):
+            X_fold_train = X_train.iloc[train_idx]
             y_fold_train = y_train_np[train_idx]
-            X_fold_val = X_train_np[val_idx]
+            X_fold_val = X_train.iloc[val_idx]
             y_fold_val = y_train_np[val_idx]
 
             model = family.build_model(
@@ -194,7 +194,7 @@ def train_surrogate(
         categorical_features=categorical_features,
         column=column,
         config=config,
-        X_train=X_train_np,
+        X_train=X_train,
         y_train=y_train_np,
     )
 
@@ -313,7 +313,7 @@ def _build_ensemble(
     categorical_features: set[str],
     column: str,
     config: TrainingConfig,
-    X_train: NDArray,
+    X_train: pd.DataFrame,
     y_train: NDArray,
 ) -> Ensemble:
     sorted_records = sorted(completed_records, key=lambda r: r.mean_rmse)
@@ -373,7 +373,8 @@ def _build_ensemble(
 def _max_correlation(candidate: NDArray, selected: list[NDArray]) -> float:
     correlations = []
     for existing in selected:
-        corr = np.corrcoef(candidate, existing)[0, 1]
+        with np.errstate(divide="ignore", invalid="ignore"):
+            corr = np.corrcoef(candidate, existing)[0, 1]
         if np.isnan(corr):
             return 1.0
         correlations.append(float(corr))

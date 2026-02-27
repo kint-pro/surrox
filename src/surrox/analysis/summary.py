@@ -401,7 +401,8 @@ def _compute_monotonicity_violations(
             rows.append(row)
 
         df = pd.DataFrame(rows)
-        ensemble = surrogate_manager.get_ensemble(mr.objective_or_constraint)
+        column = problem.target_to_column[mr.objective_or_constraint]
+        ensemble = surrogate_manager.get_ensemble(column)
         predictions = ensemble.predict(df)
 
         diffs = np.diff(predictions)

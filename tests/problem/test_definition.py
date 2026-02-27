@@ -325,7 +325,7 @@ class TestProblemDefinitionValidation:
             data_constraints=(dc,),
             monotonic_relations=(mr,),
         )
-        constraints = problem.monotonic_constraints_for("pressure_limit")
+        constraints = problem.monotonic_constraints_for("pressure_col")
         assert constraints == {"x": MonotonicDirection.INCREASING}
 
     def test_scenario_unknown_context_variable_raises(self) -> None:
@@ -538,7 +538,7 @@ class TestProblemDefinitionProperties:
     def test_monotonic_constraints_for_known_target(
         self, full_problem: ProblemDefinition
     ) -> None:
-        constraints = full_problem.monotonic_constraints_for("cost")
+        constraints = full_problem.monotonic_constraints_for("cost_col")
         assert "temperature" in constraints
         assert constraints["temperature"] == MonotonicDirection.INCREASING
 
@@ -551,7 +551,7 @@ class TestProblemDefinitionProperties:
     def test_monotonic_constraints_for_target_with_no_relations(
         self, minimal_problem: ProblemDefinition
     ) -> None:
-        constraints = minimal_problem.monotonic_constraints_for("cost")
+        constraints = minimal_problem.monotonic_constraints_for("cost_col")
         assert constraints == {}
 
 

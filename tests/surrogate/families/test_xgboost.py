@@ -33,7 +33,7 @@ class TestXGBoostFamily:
         result = xgboost_family.map_monotonic_constraints(
             constraints, feature_names, categorical_features
         )
-        assert result == {"temperature": 1, "pressure": -1}
+        assert result == (1, -1, 0)
 
     def test_map_monotonic_constraints_skips_categoricals(
         self, xgboost_family: XGBoostFamily
@@ -42,7 +42,7 @@ class TestXGBoostFamily:
         result = xgboost_family.map_monotonic_constraints(
             constraints, ["category"], {"category"}
         )
-        assert result == {}
+        assert result == (0,)
 
     def test_build_model_returns_unfitted_regressor(
         self, xgboost_family: XGBoostFamily

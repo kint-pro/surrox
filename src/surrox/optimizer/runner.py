@@ -72,7 +72,7 @@ def optimize(
             verbose=False,
         )
 
-    opt_result = _build_result(pymoo_problem, result, problem, config)
+    opt_result = _build_result(pymoo_problem, result, problem, config, scenario)
     _logger.info(
         "optimization result",
         extra={
@@ -89,6 +89,7 @@ def _build_result(
     result: object,
     problem: ProblemDefinition,
     config: OptimizerConfig,
+    scenario: Scenario | None = None,
 ) -> OptimizationResult:
     X_raw = result.X  # type: ignore[union-attr]
     F_raw = result.F  # type: ignore[union-attr]
@@ -108,6 +109,7 @@ def _build_result(
     decision_var_names = [v.name for v in problem.decision_variables]
     objective_names = [o.name for o in problem.objectives]
     objective_directions = [o.direction for o in problem.objectives]
+    context_values = scenario.context_values if scenario is not None else {}
 
     diagnostics = pymoo_problem.point_diagnostics
     diag_offset = len(diagnostics) - n_points
@@ -117,6 +119,7 @@ def _build_result(
 
     for i in range(n_points):
         variables = _extract_variables(X_raw, i, decision_var_names)
+        variables.update(context_values)
         objectives = _extract_objectives(F_2d, i, objective_names, objective_directions)
 
         diag_idx = diag_offset + i

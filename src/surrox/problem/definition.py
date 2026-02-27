@@ -216,11 +216,20 @@ class ProblemDefinition(BaseModel):
                 columns.append(column)
         return tuple(columns)
 
+    @property
+    def target_to_column(self) -> dict[str, str]:
+        mapping: dict[str, str] = {}
+        for o in self.objectives:
+            mapping[o.name] = o.column
+        for c in self.data_constraints:
+            mapping[c.name] = c.column
+        return mapping
+
     def monotonic_constraints_for(
-        self, objective_or_constraint: str
+        self, column: str,
     ) -> dict[str, MonotonicDirection]:
         return {
             mr.decision_variable: mr.direction
             for mr in self.monotonic_relations
-            if mr.objective_or_constraint == objective_or_constraint
+            if self.target_to_column.get(mr.objective_or_constraint) == column
         }

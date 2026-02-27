@@ -51,12 +51,13 @@ class XGBoostFamily:
         constraints: dict[str, MonotonicDirection],
         feature_names: list[str],
         categorical_features: set[str],
-    ) -> dict[str, int]:
-        return {
-            name: _DIRECTION_MAP[direction]
-            for name, direction in constraints.items()
-            if name not in categorical_features
-        }
+    ) -> tuple[int, ...]:
+        return tuple(
+            _DIRECTION_MAP[constraints[name]]
+            if name not in categorical_features and name in constraints
+            else 0
+            for name in feature_names
+        )
 
     def save_model(self, model: BaseEstimator, path: Path) -> None:
         if not isinstance(model, XGBRegressor):
