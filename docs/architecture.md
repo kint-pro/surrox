@@ -11,7 +11,7 @@
                        ▼
 ┌─────────────────────────────────────────────────┐
 │               SurrogateManager                  │
-│  Optuna HPO → Ensemble Selection → Conformal CP │
+│  Optuna HPO → Ensemble Selection → Conformal Prediction │
 └──────────────────────┬──────────────────────────┘
                        │
                        ▼

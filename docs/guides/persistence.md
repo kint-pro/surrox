@@ -46,7 +46,7 @@ Load it back:
 loaded_manager = surrox.SurrogateManager.load(Path("surrogates/"))
 ```
 
-The loaded manager can be used for predictions and analysis without retraining. Version mismatches between the saved and current environment are logged as warnings.
+The loaded manager can be used for predictions and analysis without retraining. Version mismatches between the saved and the current environment are logged as warnings.
 
 ## Metadata
 

@@ -60,7 +60,6 @@ nav:
       - Scenarios: guides/scenarios.md
       - Configuration: guides/configuration.md
       - Persistence: guides/persistence.md
-  - Concepts: concepts.md
   - API Reference:
       - Facade: api/facade.md
       - Problem Definition: api/problem.md
