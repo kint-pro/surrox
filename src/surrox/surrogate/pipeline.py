@@ -292,13 +292,6 @@ def _validate_quality_gate(
         )
 
 
-def _compute_clip_bounds(y: NDArray) -> tuple[float, float]:
-    q1 = float(np.percentile(y, 25))
-    q3 = float(np.percentile(y, 75))
-    iqr = q3 - q1
-    return q1 - 3.0 * iqr, q3 + 3.0 * iqr
-
-
 def _build_trial_record(
     trial_number: int,
     family_name: str,
@@ -336,8 +329,6 @@ def _build_ensemble(
     X_train: pd.DataFrame,
     y_train: NDArray,
     category_mappings: dict[str, list[str]],
-    y_clip_min: float = -np.inf,
-    y_clip_max: float = np.inf,
 ) -> Ensemble:
     sorted_records = sorted(completed_records, key=lambda r: r.mean_rmse)
 
@@ -391,8 +382,6 @@ def _build_ensemble(
         feature_names=tuple(feature_names),
         monotonic_constraints=raw_constraints,
         category_mappings=category_mappings,
-        y_min=y_clip_min,
-        y_max=y_clip_max,
     )
 
 
