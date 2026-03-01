@@ -57,5 +57,5 @@ class ShapLocalResult(BaseModel):
     feature_names: tuple[str, ...]
     shap_values: NumpyArray
     base_value: float
-    feature_values: dict[str, float]
+    feature_values: dict[str, float | int | str]
     predicted_value: float

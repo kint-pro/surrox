@@ -129,12 +129,19 @@ def linear_constraints(draw: st.DrawFn) -> LinearConstraint:
     coefficients = draw(
         st.dictionaries(variable_names, safe_nonzero_floats, min_size=1, max_size=5)
     )
+    operator = draw(st.sampled_from(ConstraintOperator))
+    tolerance = (
+        draw(st.floats(min_value=1e-6, max_value=1e3, allow_nan=False, allow_infinity=False))
+        if operator == ConstraintOperator.EQ
+        else None
+    )
     severity, penalty_weight = draw(_severity_and_weight())
     return LinearConstraint(
         name=draw(st.from_regex(r"lc_[a-z]{1,5}", fullmatch=True)),
         coefficients=coefficients,
-        operator=draw(st.sampled_from(ConstraintOperator)),
+        operator=operator,
         rhs=draw(safe_floats),
+        tolerance=tolerance,
         severity=severity,
         penalty_weight=penalty_weight,
     )

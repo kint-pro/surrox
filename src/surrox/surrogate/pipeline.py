@@ -46,8 +46,15 @@ def train_surrogate(
 
     _validate_minimum_data(len(dataset_df), config)
 
-    X = dataset_df[feature_names]
+    X = dataset_df[feature_names].copy()
     y = dataset_df[column]
+
+    category_mappings: dict[str, list[str]] = {}
+    for var in problem.variables:
+        if var.dtype in (DType.CATEGORICAL, DType.ORDINAL):
+            categories = list(var.bounds.categories)
+            X[var.name] = pd.Categorical(X[var.name], categories=categories)
+            category_mappings[var.name] = categories
 
     X_train, X_calib, y_train, y_calib = train_test_split(
         X,
@@ -57,7 +64,6 @@ def train_surrogate(
     )
 
     y_train_np = y_train.to_numpy()
-    X_calib_np = X_calib.to_numpy()
     y_calib_np = y_calib.to_numpy()
 
     oof_predictions: dict[int, NDArray] = {}
@@ -196,6 +202,7 @@ def train_surrogate(
         config=config,
         X_train=X_train,
         y_train=y_train_np,
+        category_mappings=category_mappings,
     )
 
     _logger.info(
@@ -209,12 +216,12 @@ def train_surrogate(
         },
     )
 
-    _validate_quality_gate(ensemble, X_calib_np, y_calib_np, column, config)
+    _validate_quality_gate(ensemble, X_calib, y_calib_np, column, config)
 
     conformal = ConformalCalibration.from_calibration_data(
         column=column,
         ensemble=ensemble,
-        X_calib=X_calib_np,
+        X_calib=X_calib,
         y_calib=y_calib_np,
         default_coverage=config.default_coverage,
     )
@@ -223,7 +230,7 @@ def train_surrogate(
         extra={
             "column": column,
             "coverage": config.default_coverage,
-            "n_calib_samples": len(X_calib_np),
+            "n_calib_samples": len(X_calib),
         },
     )
 
@@ -252,17 +259,15 @@ def _validate_minimum_data(n_rows: int, config: TrainingConfig) -> None:
 
 def _validate_quality_gate(
     ensemble: Ensemble,
-    X_calib: NDArray,
+    X_calib: pd.DataFrame,
     y_calib: NDArray,
     column: str,
     config: TrainingConfig,
 ) -> None:
     if config.min_r2 is None:
         return
-    import pandas as pd
 
-    X_calib_df = pd.DataFrame(X_calib, columns=list(ensemble.feature_names))
-    predictions = ensemble.predict(X_calib_df)
+    predictions = ensemble.predict(X_calib)
     r2 = r2_score(y_calib, predictions)
     if r2 < config.min_r2:
         _logger.warning(
@@ -315,6 +320,7 @@ def _build_ensemble(
     config: TrainingConfig,
     X_train: pd.DataFrame,
     y_train: NDArray,
+    category_mappings: dict[str, list[str]],
 ) -> Ensemble:
     sorted_records = sorted(completed_records, key=lambda r: r.mean_rmse)
 
@@ -367,6 +373,7 @@ def _build_ensemble(
         members=tuple(members),
         feature_names=tuple(feature_names),
         monotonic_constraints=raw_constraints,
+        category_mappings=category_mappings,
     )
 
 

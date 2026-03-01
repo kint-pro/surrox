@@ -68,7 +68,9 @@ def _build_pymoo_variables(
 
 
 def _count_constraints(problem: ProblemDefinition) -> int:
-    n = len(problem.hard_linear_constraints)
+    n = 0
+    for lc in problem.hard_linear_constraints:
+        n += 2 if lc.operator == ConstraintOperator.EQ else 1
     for dc in problem.hard_data_constraints:
         n += 2 if dc.operator == ConstraintOperator.EQ else 1
     return n
@@ -253,7 +255,12 @@ class SurroxProblem(ElementwiseProblem):
             )
 
             if lc.severity == ConstraintSeverity.HARD:
-                g_values.append(violation)
+                if lc.operator == ConstraintOperator.EQ:
+                    assert lc.tolerance is not None
+                    g_values.append(lhs - (lc.rhs + lc.tolerance))
+                    g_values.append((lc.rhs - lc.tolerance) - lhs)
+                else:
+                    g_values.append(violation)
             else:
                 assert lc.penalty_weight is not None
                 soft_penalty += lc.penalty_weight * max(0.0, violation)
@@ -267,4 +274,5 @@ def _linear_constraint_violation(lc: LinearConstraint, lhs: float) -> float:
     elif lc.operator == ConstraintOperator.GE:
         return lc.rhs - lhs
     else:
-        return abs(lhs - lc.rhs)
+        assert lc.tolerance is not None
+        return abs(lhs - lc.rhs) - lc.tolerance

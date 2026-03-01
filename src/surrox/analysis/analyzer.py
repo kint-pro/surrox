@@ -36,7 +36,17 @@ class _ShapExplanation:
     base_value: float
 
 
-def _explain_tree(model: Any, X: NDArray[np.floating[Any]]) -> _ShapExplanation:
+def _encode_feature_values(X: pd.DataFrame) -> NDArray[np.floating]:
+    import pandas as pd
+
+    result = X.copy()
+    for col in result.columns:
+        if isinstance(result[col].dtype, pd.CategoricalDtype):
+            result[col] = result[col].cat.codes.astype(np.float64)
+    return result.to_numpy(dtype=np.float64)
+
+
+def _explain_tree(model: Any, X: pd.DataFrame) -> _ShapExplanation:
     import shap
 
     explainer = shap.TreeExplainer(model)
@@ -108,7 +118,7 @@ class Analyzer:
         ensemble = self._surrogate_manager.get_ensemble(column)
         background = self._get_background_data()
         feature_names = ensemble.feature_names
-        X = background[list(feature_names)].to_numpy()
+        X = ensemble._prepare_features(background)
 
         all_shap_values = np.zeros((len(X), len(feature_names)))
         base_value = 0.0
@@ -118,12 +128,14 @@ class Analyzer:
             all_shap_values += member.weight * expl.shap_values
             base_value += member.weight * expl.base_value
 
+        feature_values = _encode_feature_values(X)
+
         return ShapGlobalResult(
             column=column,
             feature_names=feature_names,
             shap_values=all_shap_values,
             base_value=base_value,
-            feature_values=X,
+            feature_values=feature_values,
         )
 
     def shap_local(self, column: str, point_index: int) -> ShapLocalResult:
@@ -157,7 +169,7 @@ class Analyzer:
 
         row_data = dict(point.variables)
         df = pd.DataFrame([row_data])
-        X = df[list(feature_names)].to_numpy()
+        X = ensemble._prepare_features(df)
 
         shap_values = np.zeros(len(feature_names))
         base_value = 0.0
@@ -168,7 +180,7 @@ class Analyzer:
             base_value += member.weight * expl.base_value
 
         predicted_value = base_value + float(np.sum(shap_values))
-        feature_values = {name: float(X[0, i]) for i, name in enumerate(feature_names)}
+        feature_values = {name: row_data[name] for name in feature_names}
 
         return ShapLocalResult(
             column=column,
@@ -223,7 +235,7 @@ class Analyzer:
         ensemble = self._surrogate_manager.get_ensemble(column)
         background = self._get_background_data()
         feature_names = list(ensemble.feature_names)
-        X = background[feature_names]
+        X = ensemble._prepare_features(background)
 
         feature_idx = feature_names.index(variable_name)
 

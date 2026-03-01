@@ -17,6 +17,7 @@ from surrox.problem.objectives import Objective
 from surrox.problem.scenarios import Scenario
 from surrox.problem.types import (
     ConstraintOperator,
+    ConstraintSeverity,
     Direction,
     DType,
     MonotonicDirection,
@@ -58,6 +59,7 @@ __all__ = [
     "Role",
     "Direction",
     "ConstraintOperator",
+    "ConstraintSeverity",
     "MonotonicDirection",
     "BoundDataset",
     "SurroxResult",

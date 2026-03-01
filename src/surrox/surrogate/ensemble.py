@@ -16,18 +16,28 @@ class Ensemble(BaseModel):
     members: tuple[EnsembleMember, ...]
     feature_names: tuple[str, ...]
     monotonic_constraints: dict[str, MonotonicDirection]
+    category_mappings: dict[str, list[str]] = {}
+
+    def _prepare_features(self, X: pd.DataFrame) -> pd.DataFrame:
+        df = X[list(self.feature_names)]
+        if self.category_mappings:
+            df = df.copy()
+            for col, categories in self.category_mappings.items():
+                if col in df.columns and not isinstance(df[col].dtype, pd.CategoricalDtype):
+                    df[col] = pd.Categorical(df[col], categories=categories)
+        return df
 
     def predict(self, X: pd.DataFrame) -> NDArray[np.floating]:
-        features = list(self.feature_names)
-        predictions = np.stack([m.model.predict(X[features]) for m in self.members])
+        df = self._prepare_features(X)
+        predictions = np.stack([m.model.predict(df) for m in self.members])
         weights = np.array([m.weight for m in self.members])
         return predictions.T @ weights
 
     def predict_with_std(
         self, X: pd.DataFrame,
     ) -> tuple[NDArray[np.floating], NDArray[np.floating]]:
-        features = list(self.feature_names)
-        predictions = np.stack([m.model.predict(X[features]) for m in self.members])
+        df = self._prepare_features(X)
+        predictions = np.stack([m.model.predict(df) for m in self.members])
         weights = np.array([m.weight for m in self.members])
         mean = predictions.T @ weights
         std = predictions.std(axis=0)

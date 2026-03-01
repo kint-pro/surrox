@@ -31,14 +31,11 @@ class ConformalCalibration:
         cls,
         column: str,
         ensemble: Ensemble,
-        X_calib: NDArray[np.floating],
+        X_calib: pd.DataFrame,
         y_calib: NDArray[np.floating],
         default_coverage: float,
     ) -> ConformalCalibration:
-        import pandas as pd
-
-        X_df = pd.DataFrame(X_calib, columns=list(ensemble.feature_names))
-        predictions = ensemble.predict(X_df)
+        predictions = ensemble.predict(X_calib)
         conformity_scores = np.abs(y_calib - predictions)
         return cls(
             column=column,

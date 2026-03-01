@@ -44,6 +44,8 @@ class XGBoostFamily:
             random_state=random_seed,
             nthread=n_threads,
             verbosity=0,
+            enable_categorical=True,
+            tree_method="hist",
         )
 
     def map_monotonic_constraints(

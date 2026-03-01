@@ -13,8 +13,9 @@ def _make_conformal() -> ConformalCalibration:
     rng = np.random.default_rng(42)
     X_train = rng.standard_normal((200, 3))
     y_train = X_train @ [1, 2, 3] + rng.normal(0, 0.5, 200)
-    X_calib = rng.standard_normal((100, 3))
-    y_calib = X_calib @ [1, 2, 3] + rng.normal(0, 0.5, 100)
+    X_calib_np = rng.standard_normal((100, 3))
+    y_calib = X_calib_np @ [1, 2, 3] + rng.normal(0, 0.5, 100)
+    X_calib = pd.DataFrame(X_calib_np, columns=["f1", "f2", "f3"])
 
     model = LinearRegression()
     model.fit(X_train, y_train)

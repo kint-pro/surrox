@@ -43,8 +43,10 @@ class TestLinearConstraint:
             coefficients={"a": 1.0, "b": 1.0},
             operator=ConstraintOperator.EQ,
             rhs=20.0,
+            tolerance=0.5,
         )
         assert lc.operator == ConstraintOperator.EQ
+        assert lc.tolerance == 0.5
 
     def test_create_with_negative_coefficients(self) -> None:
         lc = LinearConstraint(
