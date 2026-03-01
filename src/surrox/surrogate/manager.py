@@ -14,7 +14,7 @@ from surrox._logging import log_duration
 from surrox.exceptions import SurroxError
 from surrox.surrogate.conformal import ConformalCalibration
 from surrox.surrogate.ensemble import Ensemble
-from surrox.surrogate.families import LightGBMFamily, XGBoostFamily
+from surrox.surrogate.families import GaussianProcessFamily, LightGBMFamily, XGBoostFamily
 from surrox.surrogate.models import EnsembleMember, SurrogatePrediction, TrialRecord
 from surrox.surrogate.protocol import EstimatorFamily
 
@@ -33,6 +33,7 @@ _logger = logging.getLogger(__name__)
 _FAMILY_REGISTRY: MappingProxyType[str, type[EstimatorFamily]] = MappingProxyType({
     "xgboost": XGBoostFamily,  # type: ignore[type-abstract]
     "lightgbm": LightGBMFamily,  # type: ignore[type-abstract]
+    "gaussian_process": GaussianProcessFamily,  # type: ignore[type-abstract]
 })
 
 
@@ -43,6 +44,7 @@ class SurrogateResult(BaseModel):
     ensemble: Ensemble
     conformal: ConformalCalibration
     trial_history: tuple[TrialRecord, ...]
+    ensemble_r2: float
 
 
 class SurrogateManager:
@@ -149,6 +151,9 @@ class SurrogateManager:
     def get_ensemble(self, column: str) -> Ensemble:
         return self._surrogates[column].ensemble
 
+    def get_ensemble_r2(self, column: str) -> float:
+        return self._surrogates[column].ensemble_r2
+
     def get_trial_history(self, column: str) -> tuple[TrialRecord, ...]:
         return self._surrogates[column].trial_history
 
@@ -215,6 +220,9 @@ class SurrogateManager:
                 "members": members_meta,
                 "trial_history": trial_history,
                 "default_coverage": conformal._default_coverage,
+                "ensemble_r2": surrogate.ensemble_r2,
+                "y_min": ensemble.y_min,
+                "y_max": ensemble.y_max,
             }
 
         (path / "metadata.json").write_text(json.dumps(metadata, indent=2))
@@ -284,6 +292,8 @@ class SurrogateManager:
                 members=tuple(members),
                 feature_names=feature_names,
                 monotonic_constraints=monotonic_constraints,
+                y_min=col_meta.get("y_min", -np.inf),
+                y_max=col_meta.get("y_max", np.inf),
             )
 
             calib_data = np.load(conformal_dir / f"{column}.npz")
@@ -303,6 +313,7 @@ class SurrogateManager:
                 ensemble=ensemble,
                 conformal=conformal,
                 trial_history=trial_history,
+                ensemble_r2=col_meta.get("ensemble_r2", 0.0),
             )
 
         saved_versions = metadata.get("versions", {})

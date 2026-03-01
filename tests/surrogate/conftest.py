@@ -17,7 +17,7 @@ from surrox.problem import (
     Variable,
 )
 from surrox.surrogate.config import TrainingConfig
-from surrox.surrogate.families import LightGBMFamily, XGBoostFamily
+from surrox.surrogate.families import GaussianProcessFamily, LightGBMFamily, XGBoostFamily
 
 
 @pytest.fixture
@@ -28,6 +28,11 @@ def xgboost_family() -> XGBoostFamily:
 @pytest.fixture
 def lightgbm_family() -> LightGBMFamily:
     return LightGBMFamily()
+
+
+@pytest.fixture
+def gaussian_process_family() -> GaussianProcessFamily:
+    return GaussianProcessFamily()
 
 
 @pytest.fixture

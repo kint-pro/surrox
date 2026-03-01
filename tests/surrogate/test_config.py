@@ -13,7 +13,7 @@ class TestTrainingConfig:
         assert config.cv_folds == 5
         assert config.study_timeout_s == 300
         assert config.min_r2 == 0.7
-        assert len(config.estimator_families) == 2
+        assert len(config.estimator_families) == 3
 
     def test_n_trials_must_be_at_least_1(self) -> None:
         with pytest.raises(ConfigurationError, match="n_trials"):

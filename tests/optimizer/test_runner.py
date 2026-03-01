@@ -38,9 +38,9 @@ def _make_simple_setup() -> tuple[BoundDataset, MagicMock, OptimizerConfig]:
     surrogate.evaluate.side_effect = lambda df: {
         "y": df["x1"].to_numpy() ** 2
     }
-    surrogate.evaluate_with_uncertainty.side_effect = lambda df, coverage=None: {}
+    surrogate.get_ensemble_r2.return_value = 0.0
 
-    config = OptimizerConfig(population_size=10, n_generations=3, seed=42)
+    config = OptimizerConfig(population_size=10, n_generations=3, seed=42, acquisition="direct")
 
     return dataset, surrogate, config
 

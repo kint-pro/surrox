@@ -216,7 +216,8 @@ def train_surrogate(
         },
     )
 
-    _validate_quality_gate(ensemble, X_calib, y_calib_np, column, config)
+    ensemble_r2 = _compute_ensemble_r2(ensemble, X_calib, y_calib_np)
+    _validate_quality_gate(ensemble_r2, column, config)
 
     conformal = ConformalCalibration.from_calibration_data(
         column=column,
@@ -241,47 +242,61 @@ def train_surrogate(
         ensemble=ensemble,
         conformal=conformal,
         trial_history=tuple(trial_records),
+        ensemble_r2=ensemble_r2,
     )
 
 
 def _validate_minimum_data(n_rows: int, config: TrainingConfig) -> None:
-    min_train_pool = ceil(50 * config.cv_folds / (1 - config.calibration_fraction))
-    min_calib = ceil(100 / config.calibration_fraction)
+    spf = config.min_samples_per_fold
+    mcs = config.min_calibration_samples
+    min_train_pool = ceil(spf * config.cv_folds / (1 - config.calibration_fraction))
+    min_calib = ceil(mcs / config.calibration_fraction)
     minimum = max(min_train_pool, min_calib)
     if n_rows < minimum:
-        cal = config.calibration_fraction
         raise SurrogateTrainingError(
             f"dataset has {n_rows} rows, but minimum is "
             f"{minimum} (cv_folds={config.cv_folds}, "
-            f"calibration_fraction={cal})"
+            f"calibration_fraction={config.calibration_fraction})"
         )
 
 
-def _validate_quality_gate(
+def _compute_ensemble_r2(
     ensemble: Ensemble,
     X_calib: pd.DataFrame,
     y_calib: NDArray,
+) -> float:
+    predictions = ensemble.predict(X_calib)
+    return float(r2_score(y_calib, predictions))
+
+
+def _validate_quality_gate(
+    ensemble_r2: float,
     column: str,
     config: TrainingConfig,
 ) -> None:
     if config.min_r2 is None:
         return
 
-    predictions = ensemble.predict(X_calib)
-    r2 = r2_score(y_calib, predictions)
-    if r2 < config.min_r2:
+    if ensemble_r2 < config.min_r2:
         _logger.warning(
             "quality gate failed",
             extra={
                 "column": column,
-                "r2": round(float(r2), 4),
+                "r2": round(ensemble_r2, 4),
                 "min_r2": config.min_r2,
             },
         )
         raise SurrogateTrainingError(
-            f"surrogate '{column}': ensemble R² on calibration set is {r2:.4f}, "
+            f"surrogate '{column}': ensemble R² on calibration set is {ensemble_r2:.4f}, "
             f"below minimum threshold {config.min_r2} — surrogate quality insufficient"
         )
+
+
+def _compute_clip_bounds(y: NDArray) -> tuple[float, float]:
+    q1 = float(np.percentile(y, 25))
+    q3 = float(np.percentile(y, 75))
+    iqr = q3 - q1
+    return q1 - 3.0 * iqr, q3 + 3.0 * iqr
 
 
 def _build_trial_record(
@@ -321,6 +336,8 @@ def _build_ensemble(
     X_train: pd.DataFrame,
     y_train: NDArray,
     category_mappings: dict[str, list[str]],
+    y_clip_min: float = -np.inf,
+    y_clip_max: float = np.inf,
 ) -> Ensemble:
     sorted_records = sorted(completed_records, key=lambda r: r.mean_rmse)
 
@@ -374,7 +391,11 @@ def _build_ensemble(
         feature_names=tuple(feature_names),
         monotonic_constraints=raw_constraints,
         category_mappings=category_mappings,
+        y_min=y_clip_min,
+        y_max=y_clip_max,
     )
+
+
 
 
 def _max_correlation(candidate: NDArray, selected: list[NDArray]) -> float:

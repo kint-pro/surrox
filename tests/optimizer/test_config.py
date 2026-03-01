@@ -14,6 +14,8 @@ class TestOptimizerConfig:
         assert config.extrapolation_k == 5
         assert config.extrapolation_threshold == 2.0
         assert config.constraint_confidence == 0.95
+        assert config.acquisition == "pessimistic"
+        assert config.pessimistic_beta == 1.0
 
     def test_custom_values(self) -> None:
         config = OptimizerConfig(
@@ -50,6 +52,20 @@ class TestOptimizerConfig:
     def test_constraint_confidence_one(self) -> None:
         with pytest.raises(ConfigurationError, match="constraint_confidence"):
             OptimizerConfig(constraint_confidence=1.0)
+
+    def test_pessimistic_beta_must_be_positive(self) -> None:
+        with pytest.raises(ConfigurationError, match="pessimistic_beta"):
+            OptimizerConfig(pessimistic_beta=0.0)
+        with pytest.raises(ConfigurationError, match="pessimistic_beta"):
+            OptimizerConfig(pessimistic_beta=-1.0)
+
+    def test_acquisition_direct(self) -> None:
+        config = OptimizerConfig(acquisition="direct")
+        assert config.acquisition == "direct"
+
+    def test_acquisition_invalid_rejected(self) -> None:
+        with pytest.raises(ValidationError):
+            OptimizerConfig(acquisition="invalid")
 
     def test_is_frozen(self) -> None:
         config = OptimizerConfig()

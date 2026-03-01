@@ -1,20 +1,11 @@
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from surrox.exceptions import ConfigurationError
 
 
 class OptimizerConfig(BaseModel):
-    """Configuration for the pymoo-based optimizer.
-
-    Attributes:
-        population_size: Population size for the evolutionary algorithm.
-        n_generations: Number of generations to evolve.
-        seed: Random seed for reproducibility.
-        extrapolation_k: Number of nearest neighbors for extrapolation detection.
-        extrapolation_threshold: Distance threshold beyond which a point is flagged as extrapolating.
-        constraint_confidence: Conformal prediction confidence level for constraint evaluation.
-    """
-
     model_config = ConfigDict(frozen=True)
 
     population_size: int = 100
@@ -23,6 +14,10 @@ class OptimizerConfig(BaseModel):
     extrapolation_k: int = 5
     extrapolation_threshold: float = 2.0
     constraint_confidence: float = 0.95
+    acquisition: Literal["direct", "pessimistic"] = "pessimistic"
+    pessimistic_beta: float = 1.0
+    min_beta_fraction: float = 0.1
+    trust_region_margin: float | None = None
 
     @model_validator(mode="after")
     def _validate_config(self) -> "OptimizerConfig":
@@ -38,4 +33,10 @@ class OptimizerConfig(BaseModel):
             raise ConfigurationError(
                 "constraint_confidence must be between 0 and 1 exclusive"
             )
+        if self.pessimistic_beta <= 0:
+            raise ConfigurationError("pessimistic_beta must be > 0")
+        if not (0 <= self.min_beta_fraction <= 1):
+            raise ConfigurationError("min_beta_fraction must be between 0 and 1")
+        if self.trust_region_margin is not None and self.trust_region_margin < 0:
+            raise ConfigurationError("trust_region_margin must be >= 0 if set")
         return self

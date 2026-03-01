@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 import numpy as np
+import pandas as pd
 from numpy.typing import NDArray
 from pymoo.optimize import minimize
 
@@ -23,10 +24,40 @@ from surrox.optimizer.result import (
 from surrox.problem.dataset import BoundDataset
 from surrox.problem.definition import ProblemDefinition
 from surrox.problem.scenarios import Scenario
-from surrox.problem.types import ConstraintSeverity, Direction
+from surrox.problem.types import ConstraintSeverity, DType
 from surrox.surrogate.manager import SurrogateManager
 
 _logger = logging.getLogger(__name__)
+
+
+def _compute_trust_region_bounds(
+    problem: ProblemDefinition,
+    training_df: pd.DataFrame,
+    config: OptimizerConfig,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]] | None:
+    if config.trust_region_margin is None:
+        return None
+
+    if any(
+        v.dtype in (DType.CATEGORICAL, DType.ORDINAL)
+        for v in problem.decision_variables
+    ):
+        return None
+
+    decision_vars = problem.decision_variables
+    margin = config.trust_region_margin
+    xl = np.empty(len(decision_vars), dtype=np.float64)
+    xu = np.empty(len(decision_vars), dtype=np.float64)
+
+    for i, var in enumerate(decision_vars):
+        col = training_df[var.name]
+        data_min = float(col.min())
+        data_max = float(col.max())
+        data_range = data_max - data_min
+        xl[i] = max(var.bounds.lower, data_min - margin * data_range)
+        xu[i] = min(var.bounds.upper, data_max + margin * data_range)
+
+    return xl, xu
 
 
 def optimize(
@@ -46,6 +77,10 @@ def optimize(
 
     penalty = _compute_extrapolation_penalty(problem, bound_dataset.dataframe)
 
+    trust_bounds = _compute_trust_region_bounds(
+        problem, bound_dataset.dataframe, config,
+    )
+
     pymoo_problem = SurroxProblem(
         problem=problem,
         surrogate_manager=surrogate_manager,
@@ -53,6 +88,7 @@ def optimize(
         config=config,
         extrapolation_penalty=penalty,
         scenario=scenario,
+        trust_region_bounds=trust_bounds,
     )
 
     algorithm = select_algorithm(problem, config)
@@ -72,7 +108,9 @@ def optimize(
             verbose=False,
         )
 
-    opt_result = _build_result(pymoo_problem, result, problem, config, scenario)
+    opt_result = _build_result(
+        pymoo_problem, result, problem, config, surrogate_manager, scenario,
+    )
     _logger.info(
         "optimization result",
         extra={
@@ -89,27 +127,29 @@ def _build_result(
     result: object,
     problem: ProblemDefinition,
     config: OptimizerConfig,
+    surrogate_manager: SurrogateManager,
     scenario: Scenario | None = None,
 ) -> OptimizationResult:
     X_raw = result.X  # type: ignore[union-attr]
-    F_raw = result.F  # type: ignore[union-attr]
     G_raw = result.G  # type: ignore[union-attr]
     n_evals: int = result.algorithm.evaluator.n_eval  # type: ignore[union-attr]
 
     if X_raw is None:
         return _empty_result(problem, config)
 
-    F_2d = np.atleast_2d(F_raw)
     G_2d = np.atleast_2d(G_raw) if G_raw is not None else None
 
     if isinstance(X_raw, np.ndarray) and X_raw.ndim == 1 and X_raw.dtype != object:
         X_raw = X_raw.reshape(1, -1)
 
-    n_points = F_2d.shape[0]
+    n_points = result.F.shape[0] if np.ndim(result.F) > 1 else 1  # type: ignore[union-attr]
     decision_var_names = [v.name for v in problem.decision_variables]
     objective_names = [o.name for o in problem.objectives]
-    objective_directions = [o.direction for o in problem.objectives]
     context_values = scenario.context_values if scenario is not None else {}
+
+    F_actual = _reevaluate_objectives(
+        X_raw, n_points, decision_var_names, problem, surrogate_manager, scenario,
+    )
 
     diagnostics = pymoo_problem.point_diagnostics
     diag_offset = len(diagnostics) - n_points
@@ -120,7 +160,7 @@ def _build_result(
     for i in range(n_points):
         variables = _extract_variables(X_raw, i, decision_var_names)
         variables.update(context_values)
-        objectives = _extract_objectives(F_2d, i, objective_names, objective_directions)
+        objectives = {name: float(F_actual[i, j]) for j, name in enumerate(objective_names)}
 
         diag_idx = diag_offset + i
         if 0 <= diag_idx < len(diagnostics):
@@ -206,11 +246,25 @@ def _extract_variables(
     return {name: float(X_raw[i][j]) for j, name in enumerate(var_names)}  # type: ignore[index]
 
 
-def _extract_objectives(
-    F: NDArray, i: int, names: list[str], directions: list[Direction]
-) -> dict[str, float]:
-    result: dict[str, float] = {}
-    for j, (name, direction) in enumerate(zip(names, directions, strict=True)):
-        raw = float(F[i, j])
-        result[name] = -raw if direction == Direction.MAXIMIZE else raw
-    return result
+def _reevaluate_objectives(
+    X_raw: object,
+    n_points: int,
+    decision_var_names: list[str],
+    problem: ProblemDefinition,
+    surrogate_manager: SurrogateManager,
+    scenario: Scenario | None,
+) -> NDArray[np.float64]:
+    rows: list[dict[str, object]] = []
+    for i in range(n_points):
+        variables = _extract_variables(X_raw, i, decision_var_names)
+        if scenario is not None:
+            variables.update(scenario.context_values)
+        rows.append(variables)
+
+    df = pd.DataFrame(rows)
+    predictions = surrogate_manager.evaluate(df)
+
+    F = np.zeros((n_points, len(problem.objectives)), dtype=np.float64)
+    for j, obj in enumerate(problem.objectives):
+        F[:, j] = predictions[obj.column]
+    return F

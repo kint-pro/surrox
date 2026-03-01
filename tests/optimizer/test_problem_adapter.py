@@ -90,9 +90,11 @@ class TestSurroxProblemFailFast:
             objectives=(Objective(name="o", direction=Direction.MINIMIZE, column="y"),),
         )
         gate = MagicMock(spec=ExtrapolationGate)
+        surrogate = MagicMock()
+        surrogate.get_ensemble_r2.return_value = 0.0
         sp = SurroxProblem(
             problem=problem,
-            surrogate_manager=MagicMock(),
+            surrogate_manager=surrogate,
             extrapolation_gate=gate,
             config=OptimizerConfig(),
             extrapolation_penalty=1e6,
@@ -101,7 +103,7 @@ class TestSurroxProblemFailFast:
 
 
 class TestSurroxProblemEvaluation:
-    def test_minimize_direction(self) -> None:
+    def test_minimize_direction_direct(self) -> None:
         problem = ProblemDefinition(
             variables=(
                 Variable(name="x", dtype=DType.CONTINUOUS, role=Role.DECISION,
@@ -114,20 +116,21 @@ class TestSurroxProblemEvaluation:
 
         surrogate = MagicMock()
         surrogate.evaluate.return_value = {"y": np.array([42.0])}
-        surrogate.evaluate_with_uncertainty.return_value = {}
+        surrogate.get_ensemble_r2.return_value = 0.0
 
         training = pd.DataFrame({"x": np.linspace(0, 10, 50)})
         gate = ExtrapolationGate(
             training, problem.decision_variables, k=3, threshold=100.0,
         )
 
-        sp = SurroxProblem(problem, surrogate, gate, OptimizerConfig(), 1e6)
+        config = OptimizerConfig(acquisition="direct")
+        sp = SurroxProblem(problem, surrogate, gate, config, 1e6)
 
         out: dict = {}
         sp._evaluate({"x": 5.0}, out)
         assert out["F"][0] == 42.0
 
-    def test_maximize_direction_negates(self) -> None:
+    def test_maximize_direction_direct_negates(self) -> None:
         problem = ProblemDefinition(
             variables=(
                 Variable(name="x", dtype=DType.CONTINUOUS, role=Role.DECISION,
@@ -140,18 +143,127 @@ class TestSurroxProblemEvaluation:
 
         surrogate = MagicMock()
         surrogate.evaluate.return_value = {"y": np.array([42.0])}
-        surrogate.evaluate_with_uncertainty.return_value = {}
+        surrogate.get_ensemble_r2.return_value = 0.0
 
         training = pd.DataFrame({"x": np.linspace(0, 10, 50)})
         gate = ExtrapolationGate(
             training, problem.decision_variables, k=3, threshold=100.0,
         )
 
-        sp = SurroxProblem(problem, surrogate, gate, OptimizerConfig(), 1e6)
+        config = OptimizerConfig(acquisition="direct")
+        sp = SurroxProblem(problem, surrogate, gate, config, 1e6)
 
         out: dict = {}
         sp._evaluate({"x": 5.0}, out)
         assert out["F"][0] == -42.0
+
+    def test_pessimistic_minimize_uses_mean_plus_beta_std(self) -> None:
+        problem = ProblemDefinition(
+            variables=(
+                Variable(name="x", dtype=DType.CONTINUOUS, role=Role.DECISION,
+                         bounds=ContinuousBounds(lower=0.0, upper=10.0)),
+            ),
+            objectives=(
+                Objective(name="obj", direction=Direction.MINIMIZE, column="y"),
+            ),
+        )
+
+        surrogate = MagicMock()
+        surrogate.evaluate_with_uncertainty.return_value = {
+            "y": SurrogatePrediction(
+                mean=np.array([50.0]),
+                std=np.array([5.0]),
+                lower=np.array([40.0]),
+                upper=np.array([60.0]),
+            )
+        }
+        surrogate.get_ensemble_r2.return_value = 0.0
+
+        training = pd.DataFrame({"x": np.linspace(0, 10, 50)})
+        gate = ExtrapolationGate(
+            training, problem.decision_variables, k=3, threshold=100.0,
+        )
+
+        config = OptimizerConfig(acquisition="pessimistic", pessimistic_beta=2.0)
+        sp = SurroxProblem(problem, surrogate, gate, config, 1e6)
+
+        out: dict = {}
+        sp._evaluate({"x": 5.0}, out)
+        assert out["F"][0] == pytest.approx(50.0 + 2.0 * 5.0)
+
+    def test_pessimistic_maximize_uses_negated_mean_minus_beta_std(self) -> None:
+        problem = ProblemDefinition(
+            variables=(
+                Variable(name="x", dtype=DType.CONTINUOUS, role=Role.DECISION,
+                         bounds=ContinuousBounds(lower=0.0, upper=10.0)),
+            ),
+            objectives=(
+                Objective(name="obj", direction=Direction.MAXIMIZE, column="y"),
+            ),
+        )
+
+        surrogate = MagicMock()
+        surrogate.evaluate_with_uncertainty.return_value = {
+            "y": SurrogatePrediction(
+                mean=np.array([50.0]),
+                std=np.array([5.0]),
+                lower=np.array([40.0]),
+                upper=np.array([60.0]),
+            )
+        }
+        surrogate.get_ensemble_r2.return_value = 0.0
+
+        training = pd.DataFrame({"x": np.linspace(0, 10, 50)})
+        gate = ExtrapolationGate(
+            training, problem.decision_variables, k=3, threshold=100.0,
+        )
+
+        config = OptimizerConfig(acquisition="pessimistic", pessimistic_beta=2.0)
+        sp = SurroxProblem(problem, surrogate, gate, config, 1e6)
+
+        out: dict = {}
+        sp._evaluate({"x": 5.0}, out)
+        assert out["F"][0] == pytest.approx(-(50.0 - 2.0 * 5.0))
+
+    def test_pessimistic_zero_std_equals_direct(self) -> None:
+        problem = ProblemDefinition(
+            variables=(
+                Variable(name="x", dtype=DType.CONTINUOUS, role=Role.DECISION,
+                         bounds=ContinuousBounds(lower=0.0, upper=10.0)),
+            ),
+            objectives=(
+                Objective(name="obj", direction=Direction.MINIMIZE, column="y"),
+            ),
+        )
+
+        surrogate = MagicMock()
+        surrogate.evaluate.return_value = {"y": np.array([42.0])}
+        surrogate.evaluate_with_uncertainty.return_value = {
+            "y": SurrogatePrediction(
+                mean=np.array([42.0]),
+                std=np.array([0.0]),
+                lower=np.array([42.0]),
+                upper=np.array([42.0]),
+            )
+        }
+        surrogate.get_ensemble_r2.return_value = 0.0
+
+        training = pd.DataFrame({"x": np.linspace(0, 10, 50)})
+        gate = ExtrapolationGate(
+            training, problem.decision_variables, k=3, threshold=100.0,
+        )
+
+        config_pessimistic = OptimizerConfig(acquisition="pessimistic", pessimistic_beta=2.0)
+        sp_pessimistic = SurroxProblem(problem, surrogate, gate, config_pessimistic, 1e6)
+        out_pessimistic: dict = {}
+        sp_pessimistic._evaluate({"x": 5.0}, out_pessimistic)
+
+        config_direct = OptimizerConfig(acquisition="direct")
+        sp_direct = SurroxProblem(problem, surrogate, gate, config_direct, 1e6)
+        out_direct: dict = {}
+        sp_direct._evaluate({"x": 5.0}, out_direct)
+
+        assert out_pessimistic["F"][0] == pytest.approx(out_direct["F"][0])
 
     def test_le_constraint_uses_upper_bound(self) -> None:
         problem = ProblemDefinition(
@@ -177,6 +289,7 @@ class TestSurroxProblemEvaluation:
                 upper=np.array([105.0]),
             )
         }
+        surrogate.get_ensemble_r2.return_value = 0.0
 
         training = pd.DataFrame({"x": np.linspace(0, 10, 50)})
         gate = ExtrapolationGate(
@@ -216,13 +329,15 @@ class TestSurroxProblemEvaluation:
                 upper=np.array([105.0]),
             )
         }
+        surrogate.get_ensemble_r2.return_value = 0.0
 
         training = pd.DataFrame({"x": np.linspace(0, 10, 50)})
         gate = ExtrapolationGate(
             training, problem.decision_variables, k=3, threshold=100.0,
         )
 
-        sp = SurroxProblem(problem, surrogate, gate, OptimizerConfig(), 1e6)
+        config = OptimizerConfig(acquisition="direct")
+        sp = SurroxProblem(problem, surrogate, gate, config, 1e6)
         out: dict = {}
         sp._evaluate({"x": 5.0}, out)
 
@@ -256,13 +371,15 @@ class TestSurroxProblemEvaluation:
                 upper=np.array([60.0]),
             )
         }
+        surrogate.get_ensemble_r2.return_value = 0.0
 
         training = pd.DataFrame({"x": np.linspace(0, 10, 50)})
         gate = ExtrapolationGate(
             training, problem.decision_variables, k=3, threshold=100.0,
         )
 
-        sp = SurroxProblem(problem, surrogate, gate, OptimizerConfig(), 1e6)
+        config = OptimizerConfig(acquisition="direct")
+        sp = SurroxProblem(problem, surrogate, gate, config, 1e6)
         out: dict = {}
         sp._evaluate({"x": 5.0}, out)
 
@@ -300,13 +417,15 @@ class TestSurroxProblemEvaluation:
                 upper=np.array([105.0]),
             )
         }
+        surrogate.get_ensemble_r2.return_value = 0.0
 
         training = pd.DataFrame({"x": np.linspace(0, 10, 50)})
         gate = ExtrapolationGate(
             training, problem.decision_variables, k=3, threshold=100.0,
         )
 
-        sp = SurroxProblem(problem, surrogate, gate, OptimizerConfig(), 1e6)
+        config = OptimizerConfig(acquisition="direct")
+        sp = SurroxProblem(problem, surrogate, gate, config, 1e6)
         out: dict = {}
         sp._evaluate({"x": 5.0}, out)
 
@@ -335,16 +454,85 @@ class TestSurroxProblemEvaluation:
 
         surrogate = MagicMock()
         surrogate.evaluate.return_value = {"y": np.array([42.0])}
-        surrogate.evaluate_with_uncertainty.return_value = {}
+        surrogate.get_ensemble_r2.return_value = 0.0
 
         training = pd.DataFrame({"x": np.linspace(0, 10, 50)})
         gate = ExtrapolationGate(
             training, problem.decision_variables, k=3, threshold=100.0,
         )
 
-        sp = SurroxProblem(problem, surrogate, gate, OptimizerConfig(), 1e6)
+        config = OptimizerConfig(acquisition="direct")
+        sp = SurroxProblem(problem, surrogate, gate, config, 1e6)
         out: dict = {}
         sp._evaluate({"x": 7.0}, out)
 
         assert "G" not in out
         assert out["F"][0] == 42.0 + 3.0 * 2.0
+
+    def test_adaptive_beta_scales_with_r2(self) -> None:
+        problem = ProblemDefinition(
+            variables=(
+                Variable(name="x", dtype=DType.CONTINUOUS, role=Role.DECISION,
+                         bounds=ContinuousBounds(lower=0.0, upper=10.0)),
+            ),
+            objectives=(
+                Objective(name="obj", direction=Direction.MINIMIZE, column="y"),
+            ),
+        )
+
+        surrogate = MagicMock()
+        surrogate.evaluate_with_uncertainty.return_value = {
+            "y": SurrogatePrediction(
+                mean=np.array([50.0]),
+                std=np.array([10.0]),
+                lower=np.array([40.0]),
+                upper=np.array([60.0]),
+            )
+        }
+        surrogate.get_ensemble_r2.return_value = 0.8
+
+        training = pd.DataFrame({"x": np.linspace(0, 10, 50)})
+        gate = ExtrapolationGate(
+            training, problem.decision_variables, k=3, threshold=100.0,
+        )
+
+        config = OptimizerConfig(acquisition="pessimistic", pessimistic_beta=1.0, min_beta_fraction=0.0)
+        sp = SurroxProblem(problem, surrogate, gate, config, 1e6)
+
+        out: dict = {}
+        sp._evaluate({"x": 5.0}, out)
+        assert out["F"][0] == pytest.approx(50.0 + (1.0 * 0.2) * 10.0)
+
+    def test_adaptive_beta_high_r2_approaches_direct(self) -> None:
+        problem = ProblemDefinition(
+            variables=(
+                Variable(name="x", dtype=DType.CONTINUOUS, role=Role.DECISION,
+                         bounds=ContinuousBounds(lower=0.0, upper=10.0)),
+            ),
+            objectives=(
+                Objective(name="obj", direction=Direction.MINIMIZE, column="y"),
+            ),
+        )
+
+        surrogate = MagicMock()
+        surrogate.evaluate_with_uncertainty.return_value = {
+            "y": SurrogatePrediction(
+                mean=np.array([50.0]),
+                std=np.array([10.0]),
+                lower=np.array([40.0]),
+                upper=np.array([60.0]),
+            )
+        }
+        surrogate.get_ensemble_r2.return_value = 0.99
+
+        training = pd.DataFrame({"x": np.linspace(0, 10, 50)})
+        gate = ExtrapolationGate(
+            training, problem.decision_variables, k=3, threshold=100.0,
+        )
+
+        config = OptimizerConfig(acquisition="pessimistic", pessimistic_beta=1.0, min_beta_fraction=0.0)
+        sp = SurroxProblem(problem, surrogate, gate, config, 1e6)
+
+        out: dict = {}
+        sp._evaluate({"x": 5.0}, out)
+        assert out["F"][0] == pytest.approx(50.0 + 0.01 * 10.0)

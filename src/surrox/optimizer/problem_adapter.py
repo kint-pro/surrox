@@ -67,6 +67,20 @@ def _build_pymoo_variables(
     return pymoo_vars
 
 
+def _compute_objective_betas(
+    problem: ProblemDefinition,
+    surrogate_manager: SurrogateManager,
+    config: OptimizerConfig,
+) -> NDArray[np.float64]:
+    min_beta = config.pessimistic_beta * config.min_beta_fraction
+    betas = np.zeros(len(problem.objectives), dtype=np.float64)
+    for i, obj in enumerate(problem.objectives):
+        r2 = surrogate_manager.get_ensemble_r2(obj.column)
+        adaptive_beta = config.pessimistic_beta * max(1.0 - r2, 0.0)
+        betas[i] = max(adaptive_beta, min_beta)
+    return betas
+
+
 def _count_constraints(problem: ProblemDefinition) -> int:
     n = 0
     for lc in problem.hard_linear_constraints:
@@ -85,6 +99,7 @@ class SurroxProblem(ElementwiseProblem):
         config: OptimizerConfig,
         extrapolation_penalty: float,
         scenario: Scenario | None = None,
+        trust_region_bounds: tuple[NDArray[np.float64], NDArray[np.float64]] | None = None,
     ) -> None:
         if problem.context_variables and scenario is None:
             raise OptimizationError(
@@ -98,6 +113,9 @@ class SurroxProblem(ElementwiseProblem):
         self._extrapolation_penalty = extrapolation_penalty
         self._scenario = scenario
         self._is_mixed = _has_mixed_variables(problem)
+        self._objective_betas = _compute_objective_betas(
+            problem, surrogate_manager, config,
+        )
 
         self._point_diagnostics: list[
             tuple[tuple[ConstraintEvaluation, ...], float, bool]
@@ -111,8 +129,11 @@ class SurroxProblem(ElementwiseProblem):
             super().__init__(vars=pymoo_vars, n_obj=n_obj, n_ieq_constr=n_constr)
         else:
             decision_vars = problem.decision_variables
-            xl = np.array([v.bounds.lower for v in decision_vars], dtype=np.float64)  # type: ignore[union-attr]
-            xu = np.array([v.bounds.upper for v in decision_vars], dtype=np.float64)  # type: ignore[union-attr]
+            if trust_region_bounds is not None:
+                xl, xu = trust_region_bounds
+            else:
+                xl = np.array([v.bounds.lower for v in decision_vars], dtype=np.float64)  # type: ignore[union-attr]
+                xu = np.array([v.bounds.upper for v in decision_vars], dtype=np.float64)  # type: ignore[union-attr]
             super().__init__(
                 n_var=len(decision_vars),
                 n_obj=n_obj,
@@ -153,7 +174,10 @@ class SurroxProblem(ElementwiseProblem):
         extrap_distance = float(extrap_distances[0])
 
         if is_extrapolating:
-            objectives = objectives + self._extrapolation_penalty
+            scale = (extrap_distance - 1.0) / max(
+                self._config.extrapolation_threshold - 1.0, 1e-10
+            )
+            objectives = objectives + self._extrapolation_penalty * scale
         objectives = objectives + soft_penalty
 
         out["F"] = objectives
@@ -171,11 +195,25 @@ class SurroxProblem(ElementwiseProblem):
         return {var.name: float(X[i]) for i, var in enumerate(decision_vars)}
 
     def _evaluate_objectives(self, df: pd.DataFrame) -> NDArray[np.float64]:
-        predictions = self._surrogate.evaluate(df)
+        if self._config.acquisition == "direct":
+            predictions = self._surrogate.evaluate(df)
+            values = np.zeros(len(self._problem.objectives), dtype=np.float64)
+            for i, obj in enumerate(self._problem.objectives):
+                pred = float(predictions[obj.column][0])
+                values[i] = -pred if obj.direction == Direction.MAXIMIZE else pred
+            return values
+
+        uncertainty = self._surrogate.evaluate_with_uncertainty(df)
         values = np.zeros(len(self._problem.objectives), dtype=np.float64)
         for i, obj in enumerate(self._problem.objectives):
-            pred = float(predictions[obj.column][0])
-            values[i] = -pred if obj.direction == Direction.MAXIMIZE else pred
+            pred_data = uncertainty[obj.column]
+            mean = float(pred_data.mean[0])
+            std = float(pred_data.std[0])
+            beta = float(self._objective_betas[i])
+            if obj.direction == Direction.MAXIMIZE:
+                values[i] = -(mean - beta * std)
+            else:
+                values[i] = mean + beta * std
         return values
 
     def _evaluate_constraints(

@@ -3,12 +3,12 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from surrox.exceptions import ConfigurationError
-from surrox.surrogate.families import LightGBMFamily, XGBoostFamily
+from surrox.surrogate.families import GaussianProcessFamily, LightGBMFamily, XGBoostFamily
 from surrox.surrogate.protocol import EstimatorFamily
 
 
 def _default_families() -> tuple[EstimatorFamily, ...]:
-    return (XGBoostFamily(), LightGBMFamily())  # pyright: ignore[reportReturnType]
+    return (XGBoostFamily(), LightGBMFamily(), GaussianProcessFamily())  # pyright: ignore[reportReturnType]
 
 
 class TrainingConfig(BaseModel):
@@ -42,6 +42,8 @@ class TrainingConfig(BaseModel):
     n_threads: int | None = None
     study_timeout_s: int = 300
     min_r2: float | None = 0.7
+    min_samples_per_fold: int = 50
+    min_calibration_samples: int = 100
     random_seed: int = 42
 
     @model_validator(mode="after")
@@ -77,4 +79,8 @@ class TrainingConfig(BaseModel):
             raise ConfigurationError("study_timeout_s must be >= 1")
         if self.min_r2 is not None and not (0 < self.min_r2 < 1):
             raise ConfigurationError("min_r2 must be between 0 and 1 exclusive if set")
+        if self.min_samples_per_fold < 1:
+            raise ConfigurationError("min_samples_per_fold must be >= 1")
+        if self.min_calibration_samples < 1:
+            raise ConfigurationError("min_calibration_samples must be >= 1")
         return self

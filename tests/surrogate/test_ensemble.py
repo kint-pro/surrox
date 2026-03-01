@@ -54,3 +54,50 @@ class TestEnsemble:
         mean, std = ensemble.predict_with_std(X)
         np.testing.assert_allclose(mean, [10.0])
         np.testing.assert_allclose(std, [0.0])
+
+    def test_predict_clips_to_y_bounds(self) -> None:
+        members = tuple(
+            EnsembleMember(
+                trial_number=i,
+                estimator_family="mock",
+                model=_MockModel(constant=c),
+                weight=0.5,
+                cv_rmse=0.1,
+            )
+            for i, c in enumerate([100.0, 200.0])
+        )
+        ensemble = Ensemble(
+            column="target",
+            members=members,
+            feature_names=("x1", "x2"),
+            monotonic_constraints={},
+            y_min=0.0,
+            y_max=120.0,
+        )
+        X = pd.DataFrame({"x1": [1.0], "x2": [2.0]})
+        result = ensemble.predict(X)
+        assert result[0] == 120.0
+
+    def test_predict_with_std_clips_mean_not_std(self) -> None:
+        members = tuple(
+            EnsembleMember(
+                trial_number=i,
+                estimator_family="mock",
+                model=_MockModel(constant=c),
+                weight=0.5,
+                cv_rmse=0.1,
+            )
+            for i, c in enumerate([100.0, 200.0])
+        )
+        ensemble = Ensemble(
+            column="target",
+            members=members,
+            feature_names=("x1", "x2"),
+            monotonic_constraints={},
+            y_min=0.0,
+            y_max=120.0,
+        )
+        X = pd.DataFrame({"x1": [1.0], "x2": [2.0]})
+        mean, std = ensemble.predict_with_std(X)
+        assert mean[0] == 120.0
+        np.testing.assert_allclose(std, [50.0])

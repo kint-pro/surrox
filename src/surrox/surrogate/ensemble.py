@@ -17,6 +17,8 @@ class Ensemble(BaseModel):
     feature_names: tuple[str, ...]
     monotonic_constraints: dict[str, MonotonicDirection]
     category_mappings: dict[str, list[str]] = {}
+    y_min: float = -np.inf
+    y_max: float = np.inf
 
     def _prepare_features(self, X: pd.DataFrame) -> pd.DataFrame:
         df = X[list(self.feature_names)]
@@ -31,7 +33,8 @@ class Ensemble(BaseModel):
         df = self._prepare_features(X)
         predictions = np.stack([m.model.predict(df) for m in self.members])
         weights = np.array([m.weight for m in self.members])
-        return predictions.T @ weights
+        mean = predictions.T @ weights
+        return np.clip(mean, self.y_min, self.y_max)
 
     def predict_with_std(
         self, X: pd.DataFrame,
@@ -41,4 +44,4 @@ class Ensemble(BaseModel):
         weights = np.array([m.weight for m in self.members])
         mean = predictions.T @ weights
         std = predictions.std(axis=0)
-        return mean, std
+        return np.clip(mean, self.y_min, self.y_max), std
