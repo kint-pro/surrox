@@ -4,6 +4,7 @@ from pydantic import BaseModel, ConfigDict, model_validator
 
 from surrox.exceptions import ConfigurationError
 from surrox.surrogate.families import GaussianProcessFamily, LightGBMFamily, XGBoostFamily
+from surrox.surrogate.models import EnsembleMemberConfig
 from surrox.surrogate.protocol import EstimatorFamily
 
 
@@ -45,9 +46,18 @@ class TrainingConfig(BaseModel):
     min_samples_per_fold: int = 50
     min_calibration_samples: int = 100
     random_seed: int = 42
+    refit_ensemble: dict[str, tuple[EnsembleMemberConfig, ...]] | None = None
 
     @model_validator(mode="after")
     def _validate_config(self) -> TrainingConfig:
+        if self.refit_ensemble is not None:
+            for column, members in self.refit_ensemble.items():
+                if not members:
+                    raise ConfigurationError(
+                        f"refit_ensemble['{column}'] must not be empty"
+                    )
+            return self
+
         if self.n_trials < 1:
             raise ConfigurationError("n_trials must be >= 1")
         if self.cv_folds < 2:

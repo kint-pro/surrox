@@ -15,7 +15,7 @@ from surrox.exceptions import SurroxError
 from surrox.surrogate.conformal import ConformalCalibration
 from surrox.surrogate.ensemble import Ensemble
 from surrox.surrogate.families import GaussianProcessFamily, LightGBMFamily, XGBoostFamily
-from surrox.surrogate.models import EnsembleMember, SurrogatePrediction, TrialRecord
+from surrox.surrogate.models import EnsembleMember, EnsembleMemberConfig, SurrogatePrediction, TrialRecord
 from surrox.surrogate.protocol import EstimatorFamily
 
 if TYPE_CHECKING:
@@ -73,9 +73,10 @@ class SurrogateManager:
         dataset: BoundDataset,
         config: TrainingConfig,
     ) -> SurrogateManager:
-        from surrox.surrogate.pipeline import train_surrogate
+        from surrox.surrogate.pipeline import refit_surrogate, train_surrogate
 
         columns = problem.surrogate_columns
+        is_refit = config.refit_ensemble is not None
         _logger.info(
             "surrogate training started",
             extra={
@@ -83,6 +84,7 @@ class SurrogateManager:
                 "columns": list(columns),
                 "n_trials": config.n_trials,
                 "n_families": len(config.estimator_families),
+                "refit": is_refit,
             },
         )
 
@@ -91,13 +93,23 @@ class SurrogateManager:
             with log_duration(
                 _logger, "surrogate column training",
                 column=column,
+                refit=is_refit,
             ):
-                surrogates[column] = train_surrogate(
-                    problem=problem,
-                    dataset_df=dataset.dataframe,
-                    config=config,
-                    column=column,
-                )
+                if config.refit_ensemble and column in config.refit_ensemble:
+                    surrogates[column] = refit_surrogate(
+                        problem=problem,
+                        dataset_df=dataset.dataframe,
+                        config=config,
+                        column=column,
+                        member_configs=config.refit_ensemble[column],
+                    )
+                else:
+                    surrogates[column] = train_surrogate(
+                        problem=problem,
+                        dataset_df=dataset.dataframe,
+                        config=config,
+                        column=column,
+                    )
             ensemble = surrogates[column].ensemble
             _logger.info(
                 "surrogate column complete",
@@ -159,6 +171,29 @@ class SurrogateManager:
 
     def get_surrogate_result(self, column: str) -> SurrogateResult:
         return self._surrogates[column]
+
+    def get_ensemble_member_configs(
+        self, column: str,
+    ) -> tuple[EnsembleMemberConfig, ...]:
+        result = self._surrogates[column]
+        if result.trial_history:
+            trial_by_number = {
+                t.trial_number: t for t in result.trial_history
+            }
+            return tuple(
+                EnsembleMemberConfig(
+                    estimator_family=member.estimator_family,
+                    hyperparameters=trial_by_number[member.trial_number].hyperparameters,
+                    weight=member.weight,
+                )
+                for member in result.ensemble.members
+            )
+        if self._config.refit_ensemble and column in self._config.refit_ensemble:
+            return self._config.refit_ensemble[column]
+        raise SurroxError(
+            f"cannot extract ensemble config for '{column}': "
+            f"no trial history and no refit config"
+        )
 
     def save(self, path: Path) -> None:
         _logger.info(

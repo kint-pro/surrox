@@ -225,6 +225,20 @@ class ProblemDefinition(BaseModel):
             mapping[c.name] = c.column
         return mapping
 
+    def prediction_bounds_for_column(
+        self, column: str,
+    ) -> tuple[float, float]:
+        y_min = -float("inf")
+        y_max = float("inf")
+        for obj in self.objectives:
+            if obj.column != column:
+                continue
+            if obj.prediction_lower is not None:
+                y_min = max(y_min, obj.prediction_lower)
+            if obj.prediction_upper is not None:
+                y_max = min(y_max, obj.prediction_upper)
+        return y_min, y_max
+
     def monotonic_constraints_for(
         self, column: str,
     ) -> dict[str, MonotonicDirection]:

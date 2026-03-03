@@ -31,7 +31,9 @@ from surrox.problem.variables import (
     Variable,
 )
 from surrox.result import ScenariosResult, SurroxResult
+from surrox.suggest import ObjectivePrediction, Suggestion, SuggestionResult, suggest
 from surrox.surrogate import SurrogateManager, TrainingConfig
+from surrox.surrogate.models import EnsembleMemberConfig
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -44,6 +46,11 @@ __all__ = [
     "__version__",
     "run",
     "run_scenarios",
+    "suggest",
+    "Suggestion",
+    "SuggestionResult",
+    "ObjectivePrediction",
+    "EnsembleMemberConfig",
     "ProblemDefinition",
     "Variable",
     "ContinuousBounds",

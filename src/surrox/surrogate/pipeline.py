@@ -15,7 +15,7 @@ from surrox.exceptions import SurrogateTrainingError
 from surrox.problem.types import DType, MonotonicDirection
 from surrox.surrogate.conformal import ConformalCalibration
 from surrox.surrogate.ensemble import Ensemble
-from surrox.surrogate.models import EnsembleMember, FoldMetrics, TrialRecord
+from surrox.surrogate.models import EnsembleMember, EnsembleMemberConfig, FoldMetrics, TrialRecord
 
 _logger = logging.getLogger(__name__)
 
@@ -162,7 +162,7 @@ def train_surrogate(
     optuna_logger.setLevel(logging.WARNING)
     sampler = optuna.samplers.TPESampler(
         seed=config.random_seed,
-        multivariate=True,
+        multivariate=False,
         n_startup_trials=min(20, config.n_trials),
     )
     pruner = optuna.pruners.MedianPruner(
@@ -191,6 +191,8 @@ def train_surrogate(
             f"pruned or failed — no completed trials"
         )
 
+    y_min, y_max = problem.prediction_bounds_for_column(column)
+
     ensemble = _build_ensemble(
         completed_records=completed_records,
         oof_predictions=oof_predictions,
@@ -203,6 +205,8 @@ def train_surrogate(
         X_train=X_train,
         y_train=y_train_np,
         category_mappings=category_mappings,
+        y_min=y_min,
+        y_max=y_max,
     )
 
     _logger.info(
@@ -329,6 +333,8 @@ def _build_ensemble(
     X_train: pd.DataFrame,
     y_train: NDArray,
     category_mappings: dict[str, list[str]],
+    y_min: float = -np.inf,
+    y_max: float = np.inf,
 ) -> Ensemble:
     sorted_records = sorted(completed_records, key=lambda r: r.mean_rmse)
 
@@ -382,8 +388,9 @@ def _build_ensemble(
         feature_names=tuple(feature_names),
         monotonic_constraints=raw_constraints,
         category_mappings=category_mappings,
+        y_min=y_min,
+        y_max=y_max,
     )
-
 
 
 
@@ -403,3 +410,96 @@ def _softmax(values: NDArray, temperature: float) -> NDArray:
     scaled -= scaled.max()
     exp_values = np.exp(scaled)
     return exp_values / exp_values.sum()
+
+
+def refit_surrogate(
+    problem: ProblemDefinition,
+    dataset_df: pd.DataFrame,
+    config: TrainingConfig,
+    column: str,
+    member_configs: tuple[EnsembleMemberConfig, ...],
+) -> SurrogateResult:
+    feature_names = [v.name for v in problem.variables]
+    categorical_features = {
+        v.name
+        for v in problem.variables
+        if v.dtype in (DType.CATEGORICAL, DType.ORDINAL)
+    }
+    raw_constraints = problem.monotonic_constraints_for(column)
+    families_by_name = {f.name: f for f in config.estimator_families}
+
+    X = dataset_df[feature_names].copy()
+    y = dataset_df[column]
+
+    category_mappings: dict[str, list[str]] = {}
+    for var in problem.variables:
+        if var.dtype in (DType.CATEGORICAL, DType.ORDINAL):
+            categories = list(var.bounds.categories)
+            X[var.name] = pd.Categorical(X[var.name], categories=categories)
+            category_mappings[var.name] = categories
+
+    X_train, X_calib, y_train, y_calib = train_test_split(
+        X,
+        y,
+        test_size=config.calibration_fraction,
+        random_state=config.random_seed,
+    )
+
+    y_train_np = y_train.to_numpy()
+    y_calib_np = y_calib.to_numpy()
+
+    members: list[EnsembleMember] = []
+    for i, mc in enumerate(member_configs):
+        family = families_by_name[mc.estimator_family]
+        mapped_constraints = family.map_monotonic_constraints(
+            raw_constraints, feature_names, categorical_features
+        )
+        model = family.build_model(
+            dict(mc.hyperparameters),
+            mapped_constraints,
+            config.random_seed,
+            config.n_threads,
+        )
+        model.fit(X_train, y_train_np)
+        members.append(
+            EnsembleMember(
+                trial_number=i,
+                estimator_family=mc.estimator_family,
+                model=model,
+                weight=mc.weight,
+                cv_rmse=0.0,
+            )
+        )
+
+    y_min, y_max = problem.prediction_bounds_for_column(column)
+
+    ensemble = Ensemble(
+        column=column,
+        members=tuple(members),
+        feature_names=tuple(feature_names),
+        monotonic_constraints=raw_constraints,
+        category_mappings=category_mappings,
+        y_min=y_min,
+        y_max=y_max,
+    )
+
+    ensemble_r2 = _compute_ensemble_r2(ensemble, X_calib, y_calib_np)
+    _validate_quality_gate(ensemble_r2, column, config)
+
+    conformal = ConformalCalibration.from_calibration_data(
+        column=column,
+        ensemble=ensemble,
+        X_calib=X_calib,
+        y_calib=y_calib_np,
+        default_coverage=config.default_coverage,
+    )
+
+    from surrox.surrogate.manager import SurrogateResult
+
+    return SurrogateResult(
+        column=column,
+        ensemble=ensemble,
+        conformal=conformal,
+        trial_history=(),
+        ensemble_r2=ensemble_r2,
+    )

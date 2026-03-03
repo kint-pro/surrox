@@ -4,7 +4,7 @@ from surrox.optimizer.result import (
     EvaluatedPoint,
     OptimizationResult,
 )
-from surrox.optimizer.runner import optimize
+from surrox.optimizer.runner import optimize, suggest_candidates
 
 __all__ = [
     "ConstraintEvaluation",
@@ -12,6 +12,7 @@ __all__ = [
     "OptimizationResult",
     "OptimizerConfig",
     "optimize",
+    "suggest_candidates",
 ]
 
 

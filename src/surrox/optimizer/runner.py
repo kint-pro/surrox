@@ -8,6 +8,7 @@ from numpy.typing import NDArray
 from pymoo.optimize import minimize
 
 from surrox._logging import log_duration
+from surrox.exceptions import OptimizationError
 from surrox.optimizer.algorithm import select_algorithm
 from surrox.optimizer.config import OptimizerConfig
 from surrox.optimizer.extrapolation import ExtrapolationGate
@@ -48,24 +49,41 @@ def _compute_trust_region_bounds(
     margin = config.trust_region_margin
     xl = np.empty(len(decision_vars), dtype=np.float64)
     xu = np.empty(len(decision_vars), dtype=np.float64)
+    center = config.trust_region_center
 
-    for i, var in enumerate(decision_vars):
-        col = training_df[var.name]
-        data_min = float(col.min())
-        data_max = float(col.max())
-        data_range = data_max - data_min
-        xl[i] = max(var.bounds.lower, data_min - margin * data_range)
-        xu[i] = min(var.bounds.upper, data_max + margin * data_range)
+    if center is not None:
+        missing = {v.name for v in decision_vars} - set(center.keys())
+        if missing:
+            raise OptimizationError(
+                f"trust_region_center missing keys for decision variables: {missing}"
+            )
+        for i, var in enumerate(decision_vars):
+            var_range = var.bounds.upper - var.bounds.lower
+            half_width = margin * var_range
+            c = center[var.name]
+            xl[i] = max(var.bounds.lower, c - half_width)
+            xu[i] = min(var.bounds.upper, c + half_width)
+    else:
+        for i, var in enumerate(decision_vars):
+            col = training_df[var.name]
+            data_min = float(col.min())
+            data_max = float(col.max())
+            data_range = data_max - data_min
+            xl[i] = max(var.bounds.lower, data_min - margin * data_range)
+            xu[i] = min(var.bounds.upper, data_max + margin * data_range)
 
     return xl, xu
 
 
-def optimize(
+def _run_minimization(
     bound_dataset: BoundDataset,
     surrogate_manager: SurrogateManager,
-    config: OptimizerConfig = OptimizerConfig(),
-    scenario: Scenario | None = None,
-) -> OptimizationResult:
+    config: OptimizerConfig,
+    scenario: Scenario | None,
+    log_label: str,
+    seed_points: list[dict[str, float]] | None = None,
+    **log_extra: object,
+) -> tuple[object, SurroxProblem, ExtrapolationGate]:
     problem = bound_dataset.problem
 
     gate = ExtrapolationGate(
@@ -91,16 +109,25 @@ def optimize(
         trust_region_bounds=trust_bounds,
     )
 
-    algorithm = select_algorithm(problem, config)
+    seed_X = None
+    if seed_points:
+        decision_vars = problem.decision_variables
+        seed_X = np.array([
+            [point[v.name] for v in decision_vars]
+            for point in seed_points
+        ], dtype=np.float64)
+
+    algorithm = select_algorithm(problem, config, seed_X=seed_X)
     pymoo_problem.clear_diagnostics()
 
     with log_duration(
-        _logger, "optimization",
+        _logger, log_label,
         algorithm=type(algorithm).__name__,
         population_size=config.population_size,
         n_generations=config.n_generations,
+        **log_extra,
     ):
-        result = minimize(
+        pymoo_result = minimize(
             pymoo_problem,
             algorithm,
             ("n_gen", config.n_generations),
@@ -108,8 +135,23 @@ def optimize(
             verbose=False,
         )
 
+    return pymoo_result, pymoo_problem, gate
+
+
+def optimize(
+    bound_dataset: BoundDataset,
+    surrogate_manager: SurrogateManager,
+    config: OptimizerConfig = OptimizerConfig(),  # noqa: B008
+    scenario: Scenario | None = None,
+) -> OptimizationResult:
+    result, pymoo_problem, _ = _run_minimization(
+        bound_dataset, surrogate_manager, config, scenario,
+        log_label="optimization",
+    )
+
     opt_result = _build_result(
-        pymoo_problem, result, problem, config, surrogate_manager, scenario,
+        pymoo_problem, result, bound_dataset.problem, config,
+        surrogate_manager, scenario,
     )
     _logger.info(
         "optimization result",
@@ -160,7 +202,10 @@ def _build_result(
     for i in range(n_points):
         variables = _extract_variables(X_raw, i, decision_var_names)
         variables.update(context_values)
-        objectives = {name: float(F_actual[i, j]) for j, name in enumerate(objective_names)}
+        objectives = {
+            name: float(F_actual[i, j])
+            for j, name in enumerate(objective_names)
+        }
 
         diag_idx = diag_offset + i
         if 0 <= diag_idx < len(diagnostics):
@@ -244,6 +289,123 @@ def _extract_variables(
         return {name: X_raw[i][name] for name in var_names}
 
     return {name: float(X_raw[i][j]) for j, name in enumerate(var_names)}  # type: ignore[index]
+
+
+def suggest_candidates(
+    bound_dataset: BoundDataset,
+    surrogate_manager: SurrogateManager,
+    n_candidates: int,
+    config: OptimizerConfig = OptimizerConfig(),  # noqa: B008
+    scenario: Scenario | None = None,
+    seed_points: list[dict[str, float]] | None = None,
+) -> tuple[EvaluatedPoint, ...]:
+    result, _, gate = _run_minimization(
+        bound_dataset, surrogate_manager, config, scenario,
+        log_label="suggest_candidates",
+        seed_points=seed_points,
+        n_candidates=n_candidates,
+    )
+
+    pop = result.pop
+    if pop is None:
+        raise OptimizationError("Optimizer produced no population")
+
+    X_pop = pop.get("X")
+    F_pop = pop.get("F")
+    G_pop = pop.get("G")
+
+    if X_pop is None or F_pop is None:
+        raise OptimizationError(
+            "Optimizer population contains no decision variables or objectives"
+        )
+
+    problem = bound_dataset.problem
+    decision_var_names = [v.name for v in problem.decision_variables]
+    objective_names = [o.name for o in problem.objectives]
+    context_values = scenario.context_values if scenario is not None else {}
+
+    n_pop = X_pop.shape[0]
+    X_eval = _reevaluate_objectives(
+        X_pop, n_pop, decision_var_names, problem, surrogate_manager, scenario,
+    )
+
+    scored = np.zeros(n_pop, dtype=np.float64)
+    for j, obj in enumerate(problem.objectives):
+        sign = 1.0 if obj.direction.value == "minimize" else -1.0
+        scored += sign * X_eval[:, j]
+
+    feasible_mask = np.ones(n_pop, dtype=bool)
+    if G_pop is not None:
+        feasible_mask = np.all(G_pop <= 0, axis=1)
+
+    feasible_indices = np.where(feasible_mask)[0]
+    if len(feasible_indices) == 0:
+        feasible_indices = np.arange(n_pop)
+
+    sorted_indices = feasible_indices[np.argsort(scored[feasible_indices])]
+
+    selected = _select_diverse(X_pop, sorted_indices, n_candidates)
+
+    candidates: list[EvaluatedPoint] = []
+    for idx in selected:
+        variables = _extract_variables(X_pop, idx, decision_var_names)
+        variables.update(context_values)
+        objectives = {
+            name: float(X_eval[idx, j])
+            for j, name in enumerate(objective_names)
+        }
+
+        point_df = pd.DataFrame([{
+            name: variables[name] for name in decision_var_names
+        }])
+        is_extrap_arr, dist_arr = gate.evaluate(point_df)
+        extrap_dist = float(dist_arr[0])
+        is_extrap = bool(is_extrap_arr[0])
+
+        candidates.append(EvaluatedPoint(
+            variables=variables,
+            objectives=objectives,
+            constraints=(),
+            feasible=bool(feasible_mask[idx]),
+            extrapolation_distance=extrap_dist,
+            is_extrapolating=is_extrap,
+        ))
+
+    return tuple(candidates)
+
+
+def _select_diverse(
+    X: NDArray,
+    sorted_indices: NDArray,
+    n: int,
+) -> list[int]:
+    if len(sorted_indices) <= n:
+        return sorted_indices.tolist()
+
+    X_norm = X[sorted_indices].astype(np.float64)
+    ranges = X_norm.max(axis=0) - X_norm.min(axis=0)
+    ranges[ranges == 0] = 1.0
+    X_norm = (X_norm - X_norm.min(axis=0)) / ranges
+
+    selected: list[int] = [0]
+    for _ in range(n - 1):
+        best_idx = -1
+        best_min_dist = -1.0
+        for candidate_pos in range(len(sorted_indices)):
+            if candidate_pos in selected:
+                continue
+            min_dist = min(
+                float(np.linalg.norm(X_norm[candidate_pos] - X_norm[s]))
+                for s in selected
+            )
+            if min_dist > best_min_dist:
+                best_min_dist = min_dist
+                best_idx = candidate_pos
+        if best_idx == -1:
+            break
+        selected.append(best_idx)
+
+    return [int(sorted_indices[i]) for i in selected]
 
 
 def _reevaluate_objectives(

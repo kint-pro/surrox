@@ -18,6 +18,7 @@ class OptimizerConfig(BaseModel):
     pessimistic_beta: float = 1.0
     min_beta_fraction: float = 0.1
     trust_region_margin: float | None = None
+    trust_region_center: dict[str, float] | None = None
 
     @model_validator(mode="after")
     def _validate_config(self) -> "OptimizerConfig":
@@ -39,4 +40,8 @@ class OptimizerConfig(BaseModel):
             raise ConfigurationError("min_beta_fraction must be between 0 and 1")
         if self.trust_region_margin is not None and self.trust_region_margin < 0:
             raise ConfigurationError("trust_region_margin must be >= 0 if set")
+        if self.trust_region_center is not None and self.trust_region_margin is None:
+            raise ConfigurationError(
+                "trust_region_center requires trust_region_margin to be set"
+            )
         return self

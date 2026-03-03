@@ -32,6 +32,14 @@ class TrialRecord(BaseModel):
     status: str
 
 
+class EnsembleMemberConfig(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    estimator_family: str
+    hyperparameters: dict[str, object]
+    weight: float
+
+
 class EnsembleMember(BaseModel):
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
