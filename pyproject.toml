@@ -17,6 +17,7 @@ ml = [
     "lightgbm>=4.6",
     "optuna>=3.5",
     "shap>=0.50",
+    "tabicl>=2.0",
 ]
 optimization = [
     "pymoo>=0.6",

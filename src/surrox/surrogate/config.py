@@ -3,13 +3,18 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from surrox.exceptions import ConfigurationError
-from surrox.surrogate.families import GaussianProcessFamily, LightGBMFamily, XGBoostFamily
+from surrox.surrogate.families import (
+    GaussianProcessFamily,
+    LightGBMFamily,
+    TabICLFamily,
+    XGBoostFamily,
+)
 from surrox.surrogate.models import EnsembleMemberConfig
 from surrox.surrogate.protocol import EstimatorFamily
 
 
 def _default_families() -> tuple[EstimatorFamily, ...]:
-    return (XGBoostFamily(), LightGBMFamily(), GaussianProcessFamily())  # pyright: ignore[reportReturnType]
+    return (XGBoostFamily(), LightGBMFamily(), GaussianProcessFamily(), TabICLFamily())  # pyright: ignore[reportReturnType]
 
 
 class TrainingConfig(BaseModel):

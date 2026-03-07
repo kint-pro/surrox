@@ -14,7 +14,12 @@ from surrox._logging import log_duration
 from surrox.exceptions import SurroxError
 from surrox.surrogate.conformal import ConformalCalibration
 from surrox.surrogate.ensemble import Ensemble
-from surrox.surrogate.families import GaussianProcessFamily, LightGBMFamily, XGBoostFamily
+from surrox.surrogate.families import (
+    GaussianProcessFamily,
+    LightGBMFamily,
+    TabICLFamily,
+    XGBoostFamily,
+)
 from surrox.surrogate.models import EnsembleMember, EnsembleMemberConfig, SurrogatePrediction, TrialRecord
 from surrox.surrogate.protocol import EstimatorFamily
 
@@ -34,6 +39,7 @@ _FAMILY_REGISTRY: MappingProxyType[str, type[EstimatorFamily]] = MappingProxyTyp
     "xgboost": XGBoostFamily,  # type: ignore[type-abstract]
     "lightgbm": LightGBMFamily,  # type: ignore[type-abstract]
     "gaussian_process": GaussianProcessFamily,  # type: ignore[type-abstract]
+    "tabicl": TabICLFamily,  # type: ignore[type-abstract]
 })
 
 
@@ -398,6 +404,7 @@ def _collect_versions() -> dict[str, str]:
         "scikit-learn": "scikit-learn",
         "xgboost": "xgboost",
         "lightgbm": "lightgbm",
+        "tabicl": "tabicl",
     }
     versions: dict[str, str] = {}
     for key, dist_name in packages.items():
