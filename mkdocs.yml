@@ -1,0 +1,75 @@
+site_name: surrox
+site_url: https://surrox-docs.pages.dev/
+site_description: Blackbox surrogate-based optimization framework for Python. Declarative problem definition, ensemble surrogates, multi-objective optimization, and built-in explainability.
+site_author: kint
+repo_url: https://github.com/kint-pro/surrox
+
+theme:
+  name: material
+  custom_dir: overrides
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - content.code.copy
+    - navigation.sections
+    - navigation.expand
+    - toc.follow
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - toc:
+      permalink: true
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            docstring_style: google
+            merge_init_into_class: true
+            show_root_heading: true
+            show_source: false
+            signature_crossrefs: true
+            summary: true
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            members_order: source
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Guides:
+      - Detail Analyses: guides/analysis.md
+      - Scenarios: guides/scenarios.md
+      - Configuration: guides/configuration.md
+      - Persistence: guides/persistence.md
+  - API Reference:
+      - Facade: api/facade.md
+      - Problem Definition: api/problem.md
+      - Surrogate: api/surrogate.md
+      - Optimizer: api/optimizer.md
+      - Analysis: api/analysis.md
+      - Results: api/results.md
+      - Persistence: api/persistence.md
+      - Errors: api/errors.md
+  - Architecture: architecture.md

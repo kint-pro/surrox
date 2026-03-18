@@ -1,0 +1,54 @@
+name: Bug Report
+description: Report a bug in surrox
+labels: ["bug"]
+body:
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I checked existing issues for duplicates
+          required: true
+        - label: I am using the latest version of surrox
+          required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear description of what the bug is.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproducible Example
+      description: Minimal code to reproduce the behavior.
+      render: python
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What you expected to happen.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened. Include tracebacks if applicable.
+    validations:
+      required: true
+  - type: textarea
+    id: versions
+    attributes:
+      label: Environment
+      description: |
+        Python version, surrox version, OS.
+      value: |
+        - surrox:
+        - Python:
+        - OS:
+    validations:
+      required: true

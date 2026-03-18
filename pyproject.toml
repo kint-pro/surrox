@@ -1,0 +1,71 @@
+[project]
+name = "surrox"
+version = "0.1.0"
+description = "Blackbox surrogate-based optimization framework"
+requires-python = ">=3.13,<3.14"
+license = "MIT"
+dependencies = [
+    "pydantic>=2.8",
+    "numpy>=2.1",
+    "pandas>=2.2.3",
+]
+
+[project.optional-dependencies]
+ml = [
+    "scikit-learn>=1.6",
+    "xgboost>=2.0",
+    "lightgbm>=4.6",
+    "optuna>=3.5",
+    "shap>=0.50",
+    "tabicl>=2.0",
+]
+optimization = [
+    "pymoo>=0.6",
+]
+all = [
+    "surrox[ml,optimization]",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/surrox"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+strict = true
+markers = [
+    "slow: end-to-end integration tests with real model training",
+]
+
+[tool.ruff]
+target-version = "py313"
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.pyright]
+pythonVersion = "3.13"
+include = ["src"]
+typeCheckingMode = "basic"
+reportMissingImports = true
+reportMissingTypeStubs = false
+reportAttributeAccessIssue = "warning"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=6.0",
+    "ruff>=0.9",
+    "pyright>=1.1",
+    "pip-audit>=2.7",
+    "bandit>=1.7",
+    "hypothesis>=6.100",
+]
+docs = [
+    "zensical>=0.0.24",
+    "mkdocstrings[python]>=1.0",
+]

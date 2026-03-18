@@ -1,0 +1,37 @@
+# surrox
+
+> Blackbox surrogate-based optimization framework for Python. Declarative problem definition, automated ensemble surrogates, multi-objective optimization, and built-in explainability.
+
+surrox takes a declarative problem description (variables, objectives, constraints, domain knowledge), trains ensemble surrogate models on historical data, optimizes on the surrogates, and delivers explained, uncertainty-assessed recommendations.
+
+- Python 3.13, installed via `pip install surrox[all]`
+- Declarative, immutable problem definitions using Pydantic models
+- Ensemble surrogates: XGBoost, LightGBM, Gaussian Process, TabICL with Optuna HPO
+- Conformal Prediction for distribution-free uncertainty intervals
+- Multi-objective optimization via pymoo (NSGA-II/III) and TuRBO
+- Explainability: SHAP, PDP/ICE, feature importance, what-if analysis
+- Scenario comparison across operating conditions
+- Extrapolation detection via k-NN distance
+
+## Documentation
+
+- [Getting Started](https://surrox-docs.pages.dev/getting-started/): Installation, problem definition, running the pipeline, inspecting results
+- [Architecture](https://surrox-docs.pages.dev/architecture/): Four-layer architecture (Problem, Surrogate, Optimizer, Analysis)
+- [API Reference](https://surrox-docs.pages.dev/api/facade/): Full API documentation
+
+## Guides
+
+- [Detail Analyses](https://surrox-docs.pages.dev/guides/analysis/): SHAP, PDP/ICE, feature importance, trade-off, what-if
+- [Scenarios](https://surrox-docs.pages.dev/guides/scenarios/): Multi-scenario optimization and comparison
+- [Configuration](https://surrox-docs.pages.dev/guides/configuration/): Surrogate, optimizer, and analysis settings
+- [Persistence](https://surrox-docs.pages.dev/guides/persistence/): Save and load results and trained surrogates
+
+## Optional
+
+- [API: Problem Definition](https://surrox-docs.pages.dev/api/problem/): Variables, objectives, constraints, scenarios
+- [API: Surrogate](https://surrox-docs.pages.dev/api/surrogate/): Ensemble, conformal prediction, families
+- [API: Optimizer](https://surrox-docs.pages.dev/api/optimizer/): Algorithm selection, trust regions
+- [API: Analysis](https://surrox-docs.pages.dev/api/analysis/): Analyzer, result types
+- [API: Results](https://surrox-docs.pages.dev/api/results/): Result data structures
+- [API: Persistence](https://surrox-docs.pages.dev/api/persistence/): Serialization API
+- [API: Errors](https://surrox-docs.pages.dev/api/errors/): Exception hierarchy
