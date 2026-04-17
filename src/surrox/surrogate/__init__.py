@@ -10,6 +10,7 @@ from surrox.surrogate.models import (
     SurrogatePrediction,
     TrialRecord,
 )
+from surrox.surrogate.pipeline import fast_train_surrogate
 from surrox.surrogate.protocol import EstimatorFamily
 
 __all__ = [
@@ -26,6 +27,7 @@ __all__ = [
     "TrainingConfig",
     "TrialRecord",
     "XGBoostFamily",
+    "fast_train_surrogate",
 ]
 
 

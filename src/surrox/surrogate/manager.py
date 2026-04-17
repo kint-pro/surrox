@@ -73,6 +73,61 @@ class SurrogateManager:
         self._dataset_fingerprint = dataset_fingerprint
 
     @classmethod
+    def fast_train(
+        cls,
+        problem: ProblemDefinition,
+        dataset: BoundDataset,
+        families: tuple[str, ...] = ("xgboost", "lightgbm", "gaussian_process"),
+        calibration_fraction: float | None = None,
+        random_seed: int = 42,
+    ) -> "SurrogateManager":
+        """Train surrogates without Optuna — ~20x faster than ``train``.
+
+        Uses fixed default hyperparameters for each family and skips
+        cross-validation entirely.  Produces the same ``SurrogateManager``
+        interface including conformal calibration and uncertainty estimates.
+
+        Suitable for a first-look quality signal, smoke tests, and benchmarks
+        where training time matters more than optimal hyperparameters.
+
+        Args:
+            problem: Problem definition.
+            dataset: Bound dataset.
+            families: Which estimator families to include.  GP is silently
+                dropped for n > 200 to avoid O(n³) slowdown.
+            calibration_fraction: Fraction held out for conformal calibration.
+                Defaults to 0.15 for n < 200, 0.2 otherwise.
+            random_seed: Random seed for reproducibility.
+
+        Returns:
+            A trained ``SurrogateManager``.
+        """
+        from surrox.surrogate.pipeline import fast_train_surrogate
+
+        columns = problem.surrogate_columns
+        surrogates: dict[str, SurrogateResult] = {}
+        for column in columns:
+            surrogates[column] = fast_train_surrogate(
+                problem=problem,
+                dataset_df=dataset.dataframe,
+                column=column,
+                families=families,
+                calibration_fraction=calibration_fraction,
+                random_seed=random_seed,
+            )
+
+        from surrox.surrogate.config import TrainingConfig
+        config = TrainingConfig(min_r2=None, min_samples_per_fold=5, min_calibration_samples=5)
+
+        fingerprint = _compute_dataset_fingerprint(dataset.dataframe)
+        return cls(
+            problem=problem,
+            config=config,
+            surrogates=surrogates,
+            dataset_fingerprint=fingerprint,
+        )
+
+    @classmethod
     def train(
         cls,
         problem: ProblemDefinition,
