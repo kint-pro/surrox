@@ -10,3 +10,4 @@ build/
 .hypothesis/
 site/
 .env
+.DS_Store

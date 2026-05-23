@@ -1,9 +1,35 @@
 [project]
 name = "surrox"
-version = "0.1.0"
+version = "0.1.1"
 description = "Blackbox surrogate-based optimization framework"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 requires-python = ">=3.13,<3.14"
-license = "MIT"
+authors = [
+    { name = "Jozef Mikyta", email = "mikyta.dev@gmail.com" },
+]
+keywords = [
+    "optimization",
+    "surrogate",
+    "blackbox",
+    "multi-objective",
+    "machine-learning",
+    "pymoo",
+    "xgboost",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Typing :: Typed",
+]
 dependencies = [
     "pydantic>=2.8",
     "numpy>=2.1",
@@ -25,6 +51,12 @@ optimization = [
 all = [
     "surrox[ml,optimization]",
 ]
+
+[project.urls]
+Homepage = "https://github.com/kint-pro/surrox"
+Repository = "https://github.com/kint-pro/surrox.git"
+Issues = "https://github.com/kint-pro/surrox/issues"
+Documentation = "https://surrox-docs.pages.dev"
 
 [build-system]
 requires = ["hatchling"]
