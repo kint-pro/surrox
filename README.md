@@ -56,7 +56,7 @@ print(importance.importances)  # {"temperature": 0.083, "pressure": 0.070}
 
 You define the problem declaratively. surrox handles the rest.
 
-**Surrogates** — Trains an ensemble per target column (XGBoost, LightGBM, Gaussian Process, TabICL). Optuna picks the hyperparameters. Conformal Prediction gives you calibrated uncertainty intervals, not just point estimates.
+**Surrogates** — Trains an ensemble per target column (XGBoost, LightGBM, Gaussian Process). Optuna picks the hyperparameters. Conformal Prediction gives you calibrated uncertainty intervals, not just point estimates.
 
 **Optimization** — Runs pymoo under the hood. Auto-selects the right algorithm based on your problem structure: DE for single-objective, NSGA-II for two objectives, NSGA-III for three or more. Supports linear and data-driven constraints.
 
