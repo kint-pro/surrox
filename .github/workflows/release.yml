@@ -8,9 +8,12 @@ on:
         type: boolean
         default: false
 
+permissions:
+  contents: read
+
 jobs:
   build:
-    uses: kint-pro/.github/.github/workflows/python-build.yml@main
+    uses: kint-pro/.github/.github/workflows/python-build.yml@06e47e18106a97ed021ec4edd6ec88a631911c33  # main
     with:
       python-version: "3.13"
       ref: ${{ github.ref }}
