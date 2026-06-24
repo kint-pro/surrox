@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -13,6 +12,7 @@ from surrox.analysis.shap import (
     ShapGlobalResult,
     ShapLocalResult,
 )
+from surrox.analysis.shapley import shapley_values
 from surrox.analysis.trade_off import TradeOffResult
 from surrox.analysis.what_if import WhatIfPrediction, WhatIfResult
 from surrox.exceptions import AnalysisError
@@ -30,12 +30,6 @@ if TYPE_CHECKING:
     from surrox.surrogate.manager import SurrogateManager
 
 
-@dataclass(frozen=True)
-class _ShapExplanation:
-    shap_values: NDArray[np.floating[Any]]
-    base_value: float
-
-
 def _encode_feature_values(X: pd.DataFrame) -> NDArray[np.floating]:
     import pandas as pd
 
@@ -44,17 +38,6 @@ def _encode_feature_values(X: pd.DataFrame) -> NDArray[np.floating]:
         if isinstance(result[col].dtype, pd.CategoricalDtype):
             result[col] = result[col].cat.codes.astype(np.float64)
     return result.to_numpy(dtype=np.float64)
-
-
-def _explain_tree(model: Any, X: pd.DataFrame) -> _ShapExplanation:
-    import shap
-
-    explainer = shap.TreeExplainer(model)
-    explanation = explainer(X)
-    shap_values = np.asarray(explanation.values)  # pyright: ignore[reportUnknownMemberType]
-    raw_base: Any = explanation.base_values  # pyright: ignore[reportUnknownMemberType]
-    base_value = float(raw_base[0]) if hasattr(raw_base, "__len__") else float(raw_base)
-    return _ShapExplanation(shap_values=shap_values, base_value=base_value)
 
 
 class Analyzer:
@@ -116,26 +99,26 @@ class Analyzer:
     def _compute_shap_global(self, column: str) -> ShapGlobalResult:
         _logger.debug("computing shap_global", extra={"column": column})
         ensemble = self._surrogate_manager.get_ensemble(column)
-        background = self._get_background_data()
         feature_names = ensemble.feature_names
-        X = ensemble._prepare_features(background)
+        X = ensemble._prepare_features(self._get_background_data())
 
-        all_shap_values = np.zeros((len(X), len(feature_names)))
-        base_value = 0.0
-
-        for member in ensemble.members:
-            expl = _explain_tree(member.model, X)
-            all_shap_values += member.weight * expl.shap_values
-            base_value += member.weight * expl.base_value
-
-        feature_values = _encode_feature_values(X)
+        result = shapley_values(
+            predict=ensemble.predict,
+            instances=X,
+            background=X,
+            feature_names=feature_names,
+            exact_threshold=self._config.shap_exact_threshold,
+            sampling_permutations=self._config.shap_sampling_permutations,
+            rng=np.random.default_rng(self._config.random_seed),
+        )
 
         return ShapGlobalResult(
             column=column,
             feature_names=feature_names,
-            shap_values=all_shap_values,
-            base_value=base_value,
-            feature_values=feature_values,
+            shap_values=result.shap_values,
+            base_value=result.base_value,
+            feature_values=_encode_feature_values(X),
+            standard_error=result.standard_error,
         )
 
     def shap_local(self, column: str, point_index: int) -> ShapLocalResult:
@@ -169,26 +152,33 @@ class Analyzer:
 
         row_data = dict(point.variables)
         df = pd.DataFrame([row_data])
-        X = ensemble._prepare_features(df)
+        instance = ensemble._prepare_features(df)
+        background = ensemble._prepare_features(self._get_background_data())
 
-        shap_values = np.zeros(len(feature_names))
-        base_value = 0.0
+        result = shapley_values(
+            predict=ensemble.predict,
+            instances=instance,
+            background=background,
+            feature_names=feature_names,
+            exact_threshold=self._config.shap_exact_threshold,
+            sampling_permutations=self._config.shap_sampling_permutations,
+            rng=np.random.default_rng(self._config.random_seed),
+        )
 
-        for member in ensemble.members:
-            expl = _explain_tree(member.model, X)
-            shap_values += member.weight * expl.shap_values[0]
-            base_value += member.weight * expl.base_value
-
-        predicted_value = base_value + float(np.sum(shap_values))
+        shap_values = result.shap_values[0]
+        predicted_value = result.base_value + float(np.sum(shap_values))
         feature_values = {name: row_data[name] for name in feature_names}
 
         return ShapLocalResult(
             column=column,
             feature_names=feature_names,
             shap_values=shap_values,
-            base_value=base_value,
+            base_value=result.base_value,
             feature_values=feature_values,
             predicted_value=predicted_value,
+            standard_error=result.standard_error[0]
+            if result.standard_error is not None
+            else None,
         )
 
     def feature_importance(self, column: str) -> FeatureImportanceResult:
