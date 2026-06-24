@@ -49,6 +49,8 @@ class GaussianProcessFamily:
         return None
 
     def save_model(self, model: BaseEstimator, path: Path) -> None:
+        if not isinstance(model, Pipeline):
+            raise TypeError(f"expected Pipeline, got {type(model).__name__}")
         joblib.dump(model, path.with_suffix(".joblib"))
 
     def load_model(self, path: Path) -> BaseEstimator:

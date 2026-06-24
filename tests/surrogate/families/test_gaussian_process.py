@@ -1,6 +1,7 @@
 import optuna
 import pytest
 from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.pipeline import Pipeline
 
 from surrox.problem.types import MonotonicDirection
 from surrox.surrogate.families.gaussian_process import GaussianProcessFamily
@@ -17,40 +18,31 @@ class TestGaussianProcessFamily:
         trial = study.ask()
         params = gaussian_process_family.suggest_hyperparameters(trial)
 
-        expected_keys = {"length_scale", "constant_value", "noise_level", "nu"}
+        expected_keys = {"nu", "alpha"}
         assert set(params.keys()) == expected_keys
 
-    def test_build_model_returns_gpr(
+    def test_build_model_returns_pipeline_with_gpr(
         self, gaussian_process_family: GaussianProcessFamily
     ) -> None:
         model = gaussian_process_family.build_model(
-            hyperparameters={
-                "length_scale": 1.0,
-                "constant_value": 1.0,
-                "noise_level": 1e-3,
-                "nu": 2.5,
-            },
+            hyperparameters={"nu": 2.5, "alpha": 1e-6},
             monotonic_constraints={},
             random_seed=42,
             n_threads=None,
         )
-        assert isinstance(model, GaussianProcessRegressor)
+        assert isinstance(model, Pipeline)
+        assert isinstance(model.steps[-1][1], GaussianProcessRegressor)
 
     def test_build_model_normalizes_y(
         self, gaussian_process_family: GaussianProcessFamily
     ) -> None:
         model = gaussian_process_family.build_model(
-            hyperparameters={
-                "length_scale": 1.0,
-                "constant_value": 1.0,
-                "noise_level": 1e-3,
-                "nu": 1.5,
-            },
+            hyperparameters={"nu": 1.5, "alpha": 1e-6},
             monotonic_constraints={},
             random_seed=42,
             n_threads=None,
         )
-        assert model.normalize_y is True
+        assert model.steps[-1][1].normalize_y is True
 
     def test_map_monotonic_constraints_returns_none(
         self, gaussian_process_family: GaussianProcessFamily
@@ -67,12 +59,7 @@ class TestGaussianProcessFamily:
         import numpy as np
 
         model = gaussian_process_family.build_model(
-            hyperparameters={
-                "length_scale": 1.0,
-                "constant_value": 1.0,
-                "noise_level": 1e-3,
-                "nu": 2.5,
-            },
+            hyperparameters={"nu": 2.5, "alpha": 1e-6},
             monotonic_constraints={},
             random_seed=42,
             n_threads=None,
@@ -96,5 +83,5 @@ class TestGaussianProcessFamily:
     ) -> None:
         from unittest.mock import MagicMock
 
-        with pytest.raises(TypeError, match="expected GaussianProcessRegressor"):
+        with pytest.raises(TypeError, match="expected Pipeline"):
             gaussian_process_family.save_model(MagicMock(), tmp_path / "bad")
