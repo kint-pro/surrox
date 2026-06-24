@@ -39,10 +39,9 @@ dependencies = [
 [project.optional-dependencies]
 ml = [
     "scikit-learn>=1.6",
-    "xgboost>=2.0",
+    "xgboost-cpu>=2.1",
     "lightgbm>=4.6",
     "optuna>=3.5",
-    "shap>=0.50",
 ]
 optimization = [
     "pymoo>=0.6",
