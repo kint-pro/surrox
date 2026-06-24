@@ -28,6 +28,8 @@ class ShapGlobalResult(BaseModel):
         shap_values: SHAP value matrix, shape (n_samples, n_features).
         base_value: Expected model output (ensemble-weighted).
         feature_values: Feature value matrix, shape (n_samples, n_features).
+        standard_error: Sampling standard error per value, same shape as
+            shap_values, or None when computed by exact enumeration.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -37,6 +39,7 @@ class ShapGlobalResult(BaseModel):
     shap_values: NumpyArray
     base_value: float
     feature_values: NumpyArray
+    standard_error: NumpyArray | None = None
 
 
 class ShapLocalResult(BaseModel):
@@ -49,6 +52,8 @@ class ShapLocalResult(BaseModel):
         base_value: Expected model output (ensemble-weighted).
         feature_values: Feature values at this point.
         predicted_value: Model prediction (base_value + sum of SHAP values).
+        standard_error: Sampling standard error per value, shape (n_features,),
+            or None when computed by exact enumeration.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -59,3 +64,4 @@ class ShapLocalResult(BaseModel):
     base_value: float
     feature_values: dict[str, float | int | str]
     predicted_value: float
+    standard_error: NumpyArray | None = None

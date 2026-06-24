@@ -61,13 +61,17 @@ Cross-run comparison. Operates on already-computed optimization results from mul
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| shap_background_size | int | 100 | Max samples from training data for SHAP TreeExplainer background (interventional mode) |
+| shap_background_size | int | 100 | Max samples from training data used as the SHAP interventional background |
+| shap_exact_threshold | int | 12 | Feature count up to which Shapley values are computed by exact coalition enumeration. Above it, antithetic permutation sampling is used |
+| shap_sampling_permutations | int | 200 | Permutations drawn per instance when feature count exceeds shap_exact_threshold |
 | pdp_grid_resolution | int | 50 | Number of grid points for PDP/ICE computation |
 | pdp_percentiles | tuple[float, float] | (0.05, 0.95) | Feature range percentiles for PDP grid |
 | monotonicity_check_resolution | int | 50 | Grid points per variable for monotonicity validation |
 
 **Validation rules:**
 - shap_background_size >= 10
+- shap_exact_threshold >= 1
+- shap_sampling_permutations >= 1
 - pdp_grid_resolution >= 10
 - monotonicity_check_resolution >= 10
 - 0 < pdp_percentiles[0] < pdp_percentiles[1] < 1
@@ -225,9 +229,12 @@ SHAP values over the training data for a single surrogate column.
 | shap_values | NDArray | Shape (n_samples, n_features) — SHAP values |
 | base_value | float | Expected model output (baseline) |
 | feature_values | NDArray | Shape (n_samples, n_features) — original input data |
+| standard_error | NDArray \| None | Shape (n_samples, n_features) — sampling standard error, or None when computed exactly |
 
 **Computation:**
-For each ensemble member, create `shap.TreeExplainer(member.model)`, compute `explainer(X)`. Aggregate SHAP values across members as weighted average (using ensemble member weights). `base_value` is the weighted average of member base values.
+Model-agnostic interventional Shapley values computed on the ensemble's aggregate prediction `Ensemble.predict` (ADR-026). The ensemble is treated as one black box `f(x) = Σ wₖ·modelₖ(x)`; per-member explanation is not used, so trees, Gaussian Processes, TabICL, and any future family are explained through one path.
+
+`base_value` is the expected output over the background, `E_background[f]`. The efficiency property holds exactly: `base_value + Σ shap_values = f(x)`.
 
 Background data: sample up to `shap_background_size` rows from training data.
 
@@ -243,6 +250,7 @@ SHAP values for a single solution point.
 | base_value | float | Expected model output (baseline) |
 | feature_values | dict[str, float] | Feature values of the explained point |
 | predicted_value | float | `base_value + sum(shap_values)` |
+| standard_error | NDArray \| None | Shape (n_features,) — sampling standard error, or None when computed exactly |
 
 `point_index` refers to `OptimizationResult.feasible_points`. The solution point is constructed as a DataFrame row from `EvaluatedPoint.variables` + scenario context (if applicable).
 
@@ -324,18 +332,22 @@ Compares optimization results across scenarios. Produced by `compare_scenarios()
 
 ## SHAP Computation Details
 
-### Ensemble Aggregation
+### Model-Agnostic Shapley on the Aggregate Prediction
 
-`shap.TreeExplainer` accepts a single model. For an ensemble of K models:
+SHAP values are computed on `Ensemble.predict` directly, never per member (ADR-026). The ensemble is a heterogeneous mix of families (trees, Gaussian Process, TabICL, future neural networks); a tree-specific explainer cannot explain non-tree members. Because Shapley values are linear (`Σ wₖ·φ(modelₖ) = φ(Σ wₖ·modelₖ)`), explaining the weighted aggregate is identical to weight-averaging exact per-member values for the tree case, while also covering every other family.
 
-1. Create one `TreeExplainer` per member model
-2. Compute SHAP values per member: `explanation_k = explainer_k(X)`
-3. Weighted average: `shap_values = Σ(weight_k × explanation_k.values)` for k=1..K
-4. Base value: `base_value = Σ(weight_k × explanation_k.base_values[0])` for k=1..K
+The masking primitive is interventional: for a coalition `S`, present features take the explained instance's values and absent features take the background sample's values; `v(S) = mean over background of f(hybrid)`.
+
+### Exact vs. Sampling
+
+- **Exact** (`n_features ≤ shap_exact_threshold`): full coalition enumeration of the Shapley sum. `standard_error` is `None`.
+- **Sampling** (`n_features > shap_exact_threshold`): antithetic permutation sampling with `shap_sampling_permutations` permutations (each used forward and reversed). Reports a per-value `standard_error`. The efficiency property `base_value + Σφ = f(x)` holds exactly in both modes.
+
+The crossover threshold is user-configurable because exact cost grows as `2^n_features` while sampling cost grows as `2 · permutations · n_features`; the default of 12 keeps exact computation tractable.
 
 ### Categorical Feature Handling
 
-The surrogate pipeline pre-encodes categoricals before training (no `enable_categorical=True` in XGBoost). TreeExplainer works on the encoded features. The SHAP results use `feature_names` from `Ensemble.feature_names`, which are the post-encoding column names.
+The surrogate pipeline pre-encodes categoricals before training. Masking and `Ensemble.predict` operate on the encoded features. The SHAP results use `feature_names` from `Ensemble.feature_names`, the post-encoding column names.
 
 ## PDP/ICE Computation Details
 
@@ -418,7 +430,7 @@ tests/analysis/
 4. `compare_scenarios()` is a separate entry point taking `dict[str, OptimizationResult]`
 5. `ConstraintStatus` wraps `ConstraintEvaluation` (no field duplication)
 6. `SurrogateQuality` uses `cv_rmse` from trial history and conformal coverage from `SurrogateResult`
-7. SHAP values aggregate correctly across ensemble members (weighted average)
+7. SHAP values are computed model-agnostically on `Ensemble.predict` and satisfy the efficiency property `base_value + Σφ = prediction` for any mix of estimator families
 8. PDP/ICE uses `method="brute"` for XGBoost/LightGBM compatibility
 9. Monotonicity validation detects violations along a 1D slice at the recommended solution
 10. What-If supports arbitrary variable values within bounds and is not cached
